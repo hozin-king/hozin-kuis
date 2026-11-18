@@ -32,10 +32,10 @@ jobs:
             exit 1
           fi
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Install Android SDK packages
+        # TANPA android-actions/setup-android: action itu gagal di runner ini
+        # (sdkmanager cmdline-tools 16 tidak lagi punya paket 'tools').
+        # Runner ubuntu-latest sudah membawa Android SDK (ANDROID_HOME ter-set).
         run: |
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-34" "build-tools;34.0.0" "ndk;26.1.10909125"

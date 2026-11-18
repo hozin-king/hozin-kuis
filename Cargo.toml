@@ -27,7 +27,10 @@ package = "com.hozinking.kuis"
 build_targets = ["aarch64-linux-android"]
 # Ikon launcher: android_res/mipmap-*/ic_launcher.png (dihasilkan dari
 # sprite Pikachu oleh tools/gen_icon.py) + icon di [application] di bawah.
-res = "android_res"
+# Field cargo-apk 0.10 adalah `resources` (bukan `res` — `res` milik fork
+# cargo-quad-apk dan diabaikan diam-diam, yang membuat aapt gagal karena
+# @mipmap/ic_launcher tidak ditemukan).
+resources = "android_res"
 
 [package.metadata.android.sdk]
 min_sdk_version = 26

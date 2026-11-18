@@ -382,21 +382,23 @@ impl eframe::App for KuisApp {
 fn paint_background(ctx: &egui::Context) {
     // Gradien vertikal 3 titik (biru gelap -> indigo -> ungu) menutupi
     // seluruh layar; satu mesh, tanpa aset gambar.
-    let rect = ctx.screen_rect();
+    // (egui 0.33: colored_vertex tidak mengembalikan indeks, dan
+    // Shape::Mesh memegang Arc<Mesh>.)
+    let rect = ctx.content_rect();
     let mid_y = rect.top() + rect.height() * 0.55;
     let mut mesh = Mesh::default();
-    let a = mesh.colored_vertex(rect.left_top(), GRAD_TOP);
-    let b = mesh.colored_vertex(rect.right_top(), GRAD_TOP);
-    let c = mesh.colored_vertex(egui::pos2(rect.left(), mid_y), GRAD_MID);
-    let d = mesh.colored_vertex(egui::pos2(rect.right(), mid_y), GRAD_MID);
-    let e = mesh.colored_vertex(rect.left_bottom(), GRAD_BOT);
-    let f = mesh.colored_vertex(rect.right_bottom(), GRAD_BOT);
-    mesh.add_triangle(a, b, c);
-    mesh.add_triangle(b, d, c);
-    mesh.add_triangle(c, d, e);
-    mesh.add_triangle(d, f, e);
+    mesh.colored_vertex(rect.left_top(), GRAD_TOP);
+    mesh.colored_vertex(rect.right_top(), GRAD_TOP);
+    mesh.colored_vertex(egui::pos2(rect.left(), mid_y), GRAD_MID);
+    mesh.colored_vertex(egui::pos2(rect.right(), mid_y), GRAD_MID);
+    mesh.colored_vertex(rect.left_bottom(), GRAD_BOT);
+    mesh.colored_vertex(rect.right_bottom(), GRAD_BOT);
+    mesh.add_triangle(0, 1, 2);
+    mesh.add_triangle(1, 3, 2);
+    mesh.add_triangle(2, 3, 4);
+    mesh.add_triangle(3, 5, 4);
     ctx.layer_painter(LayerId::background())
-        .add(Shape::Mesh(mesh));
+        .add(Shape::Mesh(std::sync::Arc::new(mesh)));
 }
 
 // Chip seleksi: terpilih berisi warna kategori, tidak terpilih gelap + teks berwarna.

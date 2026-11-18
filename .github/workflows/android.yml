@@ -60,7 +60,11 @@ jobs:
 
       - name: Verify APK
         run: |
-          APK=$(ls target/release/apk/*.apk | head -n 1)
+          # cargo-apk menghasilkan 2 file: HozinKuis.apk (aligned+ditandatangani)
+          # dan HozinKuis-unaligned.apk (mentah, TIDAK ditandatangani).
+          # Urutan ls alfabetis menaruh yang unaligned lebih dulu ('-' < '.'),
+          # jadi saring keluar file unaligned.
+          APK=$(ls target/release/apk/*.apk | grep -v -- '-unaligned.apk' | head -n 1)
           echo "APK=$APK" >> "$GITHUB_ENV"
           ls -l "$APK"
           "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "$APK" | grep -E "package:|application-label"

@@ -1,0 +1,47 @@
+apply plugin: 'com.android.application'
+apply plugin: 'kotlin-android'
+
+android {
+    namespace 'com.hozinking.kuis'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.hozinking.kuis"
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+    }
+
+    // Keystore debug PERSISTEN: file debug.keystore di root repo dipulihkan
+    // workflow dari secret DEBUG_KEYSTORE_BASE64. Config dibuat kondisional
+    // agar AGP tidak gagal bila file tidak ada (pelajaran 9 Nov 2026).
+    signingConfigs {
+        if (file("../debug.keystore").exists()) {
+            debug {
+                storeFile file("../debug.keystore")
+                storePassword "android"
+                keyAlias "androiddebugkey"
+                keyPassword "android"
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            if (file("../debug.keystore").exists()) {
+                signingConfig signingConfigs.debug
+            }
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+}

@@ -1,0 +1,61 @@
+name: Android CI
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Restore persistent debug keystore
+        env:
+          DEBUG_KEYSTORE_BASE64: ${{ secrets.DEBUG_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$DEBUG_KEYSTORE_BASE64" ]; then
+            echo "$DEBUG_KEYSTORE_BASE64" | base64 -d > debug.keystore
+            echo "debug.keystore dipulihkan dari secret — build memakai tanda tangan persisten"
+          else
+            echo "DEBUG_KEYSTORE_BASE64 tidak ada — build rilis tanpa signing akan gagal"
+            exit 1
+          fi
+
+      - name: Install Android SDK packages
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-34" "build-tools;34.0.0"
+
+      - name: Build release APK
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --stacktrace
+
+      # TIDAK ada upload-artifact: kuota storage Actions akun terbatas.
+      # APK disalurkan lewat GitHub Release di step berikut.
+      - name: Create or update GitHub Release
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(grep -oP 'versionName\s*=?\s*"\K[^"]+' app/build.gradle || true)
+          if [ -z "$VERSION" ]; then echo "versionName tidak ditemukan di app/build.gradle"; exit 1; fi
+          TAG="v$VERSION"
+          APK=$(ls app/build/outputs/apk/release/*.apk | head -n 1)
+          cp "$APK" "HozinKuis-$VERSION.apk"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "HozinKuis-$VERSION.apk" --clobber
+          else
+            gh release create "$TAG" "HozinKuis-$VERSION.apk" --title "Hozin Kuis $VERSION" --notes "Game kuis Android native (Kotlin, tanpa WebView). Mode Trivia (soal dari Open Trivia DB — gratis, tanpa kunci) dan Tebak Pokemon (data dari PokeAPI — gratis, tanpa kunci). 10 soal/ronde, timer 30 detik per soal, skor + streak, skor terbaik tersimpan lokal. Butuh internet untuk mengambil soal. Tanpa iklan, tanpa IAP, tanpa login."
+          fi

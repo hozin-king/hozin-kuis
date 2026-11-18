@@ -1,4 +1,4 @@
-// Hozin Kuis v2.3 — full Rust (eframe/egui + android-activity).
+// Hozin Kuis v2.4 — full Rust (eframe/egui + android-activity).
 // Offline penuh: bank soal Bahasa Indonesia + data/sprite 151 Pokemon Gen 1
 // dibundel di binary. Tanpa WebView, tanpa iklan, tanpa IAP, tanpa login,
 // tanpa network saat runtime.
@@ -46,6 +46,14 @@ const DIFF_COLORS: [Color32; 3] = [
     Color32::from_rgb(46, 160, 67),  // Mudah — hijau
     Color32::from_rgb(230, 160, 30), // Sedang — emas
     Color32::from_rgb(200, 60, 60),  // Sulit — merah
+];
+// Tint gelap per huruf jawaban (A biru, B hijau, C emas, D ungu) —
+// cukup gelap untuk teks putih, cukup beda untuk dikenali sekilas.
+const LETTER_TINTS: [Color32; 4] = [
+    Color32::from_rgb(14, 58, 78),  // A — biru
+    Color32::from_rgb(18, 66, 36),  // B — hijau
+    Color32::from_rgb(74, 56, 18),  // C — emas
+    Color32::from_rgb(50, 32, 80),  // D — ungu
 ];
 // Maskot menu: starter + Pikachu + Eevee (sprite sudah dibundel).
 const MASCOTS: [u32; 5] = [1, 4, 7, 25, 133];
@@ -364,7 +372,9 @@ impl eframe::App for KuisApp {
                                 show_menu(ctx, ui, cat, dif, bt, bp, &mut self.textures)
                             }
                             Screen::Quiz(q) => show_quiz(ctx, ui, q, &mut self.textures),
-                            Screen::Result(r) => show_result(ui, r),
+                            Screen::Result(r) => {
+                                show_result(ctx, ui, r, &mut self.textures)
+                            }
                         })
                         .inner
                     })
@@ -449,6 +459,37 @@ fn progress_dots(ui: &mut egui::Ui, idx: usize, total: usize) {
                 Color32::from_rgb(60, 68, 84)
             };
             ui.painter_at(rect).circle_filled(rect.center(), 7.0, col);
+        }
+    });
+}
+
+// Dorong strip bawah (maskot/footer) ke dasar layar: isi sisa ruang viewport
+// dengan spasi. Aman di dalam ScrollArea karena memakai tinggi viewport
+// nyata (ctx.content_rect), bukan available_height yang di dalam ScrollArea
+// tak terbatas. Bila konten sudah lebih tinggi dari layar, gap <= 0 dan
+// tidak ada spasi yang ditambahkan (ScrollArea yang menangani).
+fn push_to_bottom(ctx: &egui::Context, ui: &mut egui::Ui, reserve: f32) {
+    let gap = ctx.content_rect().bottom() - ui.cursor().min.y - reserve;
+    if gap > 0.0 {
+        ui.add_space(gap);
+    }
+}
+
+// Deretan 5 maskot kecil di dasar layar (sprite sudah dibundel, tanpa aset
+// baru). Dipusatkan manual — JANGAN horizontal_centered (lihat komentar
+// progress_dots: ia bisa mengembang dan mendorong konten di bawahnya).
+fn mascot_strip(
+    ctx: &egui::Context,
+    ui: &mut egui::Ui,
+    textures: &mut HashMap<u32, (TextureHandle, TextureHandle)>,
+    size: f32,
+) {
+    let total_w = 5.0 * size + 4.0 * 8.0;
+    ui.horizontal(|ui| {
+        ui.add_space(((ui.available_width() - total_w) / 2.0).max(0.0));
+        for id in MASCOTS {
+            let (ct, _) = get_textures(ctx, textures, id);
+            ui.image((ct.id(), Vec2::new(size, size)));
         }
     });
 }
@@ -580,11 +621,11 @@ fn show_menu(
     {
         action = Action::StartPokemon;
     }
-    // Footer tepat setelah tombol (jarak tetap). Spacer "dorong ke bawah
-    // layar" v2.2 dihapus: di dalam ScrollArea ia tidak terdefinisi, dan
-    // di luar ScrollArea ia rapuh — ScrollArea di atas yang menjamin
-    // semua elemen selalu bisa dijangkau.
+    // Footer didorong ke dasar layar (bukan spacer fraksi v2.2 yang rapuh):
+    // push_to_bottom memakai tinggi viewport nyata, jadi footer selalu
+    // menempel di bawah bila konten lebih pendek dari layar.
     ui.add_space(10.0);
+    push_to_bottom(ctx, ui, 28.0);
     ui.label(
         RichText::new("Offline \u{2022} 120 soal \u{2022} 151 Pokemon Gen 1")
             .size(16.0)
@@ -649,11 +690,22 @@ fn show_quiz(
     let answered = matches!(q.phase, Phase::Answered { .. });
 
     ui.add_space(12.0);
+    // Baris atas: tombol kembali ke menu (kiri), nomor soal, skor (kanan).
     ui.horizontal(|ui| {
+        if ui
+            .add_sized(
+                Vec2::new(104.0, 44.0),
+                Button::new(RichText::new("\u{2190} Menu").size(20.0).strong()),
+            )
+            .clicked()
+        {
+            action = Action::ToMenu;
+        }
+        ui.add_space(8.0);
         ui.label(
             RichText::new(format!("Soal {}/{}", q.idx + 1, q.items.len())).size(20.0),
         );
-        ui.with_layout(Layout::right_to_left(Align::TOP), |ui| {
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             let skor = if q.streak >= 2 {
                 format!("Skor: {}   Streak: {}x", q.score, q.streak)
             } else {
@@ -662,25 +714,45 @@ fn show_quiz(
             ui.label(RichText::new(skor).size(20.0).strong());
         });
     });
-    ui.add_space(8.0);
+    ui.add_space(10.0);
+    // Timer: bar dibuat 36px + teks 18pt supaya teks muat rapi DI DALAM bar
+    // (bug v2.3: bar tinggi default ~20px dengan teks 22pt, teks menumpuk
+    // di atas bar).
     if matches!(q.phase, Phase::Answering) {
         let remain = q.deadline.saturating_duration_since(Instant::now());
         let frac = remain.as_secs_f32() / QUESTION_SECS as f32;
         ui.add(
-            ProgressBar::new(frac).text(format!("Sisa waktu: {} detik", remain.as_secs())),
+            ProgressBar::new(frac)
+                .desired_height(36.0)
+                .text(
+                    RichText::new(format!("Sisa waktu: {} detik", remain.as_secs()))
+                        .size(18.0),
+                ),
         );
     } else {
-        ui.add(ProgressBar::new(0.0).text("Waktu berhenti"));
+        ui.add(
+            ProgressBar::new(0.0)
+                .desired_height(36.0)
+                .text(RichText::new("Waktu berhenti").size(18.0)),
+        );
     }
-    ui.add_space(8.0);
+    ui.add_space(12.0);
+    let mode_name = match q.mode {
+        Mode::Trivia => "TRIVIA",
+        Mode::Pokemon => "TEBAK POKEMON",
+    };
+    ui.label(RichText::new(mode_name).size(18.0).strong().color(ACCENT));
+    ui.add_space(6.0);
     Frame::default()
         .fill(CARD)
+        .stroke(Stroke::new(2.0_f32, ACCENT))
         .corner_radius(CornerRadius::same(14))
-        .inner_margin(Margin::symmetric(14, 12))
+        .inner_margin(Margin::symmetric(18, 16))
         .show(ui, |ui| {
-            ui.label(RichText::new(&item.prompt).size(26.0).strong());
+            ui.set_min_height(110.0);
+            ui.label(RichText::new(&item.prompt).size(30.0).strong());
         });
-    ui.add_space(12.0);
+    ui.add_space(16.0);
 
     // PERBAIKAN SILUET (bug v1.0: hitam di atas hitam): sprite selalu digambar
     // di atas lingkaran LATAR TERANG, jadi siluet hitam pekat jelas kelihatan.
@@ -717,7 +789,9 @@ fn show_quiz(
             opt.clone()
         };
         let text = format!("{}. {}", letters[i], text);
-        let mut btn = Button::new(RichText::new(text).size(22.0));
+        // Tombol jawaban 84px + tint gelap per huruf (A biru, B hijau,
+        // C emas, D ungu) — v2.3: 64px abu-abu datar, tanpa identitas huruf.
+        let mut btn = Button::new(RichText::new(text).size(24.0)).fill(LETTER_TINTS[i]);
         if let Phase::Answered { chosen } = &q.phase {
             if i == item.answer {
                 btn = btn.fill(Color32::from_rgb(46, 160, 67));
@@ -726,13 +800,13 @@ fn show_quiz(
             }
         }
         if ui
-            .add_sized(Vec2::new(ui.available_width(), 64.0), btn)
+            .add_sized(Vec2::new(ui.available_width(), 84.0), btn)
             .clicked()
             && matches!(q.phase, Phase::Answering)
         {
             action = Action::Answer(Some(i));
         }
-        ui.add_space(8.0);
+        ui.add_space(12.0);
     }
 
     if let Phase::Answered { chosen } = &q.phase {
@@ -778,10 +852,22 @@ fn show_quiz(
         ui.add_space(16.0);
         progress_dots(ui, q.idx, q.items.len());
     }
+    // Ekor layar: strip maskot didorong ke dasar layar (void ungu besar
+    // di bawah titik progres pada v2.3). Bila konten lebih tinggi dari
+    // layar, push_to_bottom tidak menambah apa-apa dan ScrollArea menangani.
+    ui.add_space(12.0);
+    push_to_bottom(ctx, ui, 52.0);
+    mascot_strip(ctx, ui, textures, 40.0);
+    ui.add_space(8.0);
     action
 }
 
-fn show_result(ui: &mut egui::Ui, r: &ResultState) -> Action {
+fn show_result(
+    ctx: &egui::Context,
+    ui: &mut egui::Ui,
+    r: &ResultState,
+    textures: &mut HashMap<u32, (TextureHandle, TextureHandle)>,
+) -> Action {
     let mut action = Action::None;
     ui.add_space(24.0);
     ui.label(RichText::new("SELESAI!").size(44.0).strong());
@@ -795,11 +881,11 @@ fn show_result(ui: &mut egui::Ui, r: &ResultState) -> Action {
         .corner_radius(CornerRadius::same(14))
         .show(ui, |ui| {
             ui.vertical_centered(|ui| {
-                ui.label(RichText::new(format!("Skor: {}", r.score)).size(26.0).strong());
+                ui.label(RichText::new(format!("Skor: {}", r.score)).size(36.0).strong());
                 ui.label(
-                    RichText::new(format!("Benar: {}/{}", r.correct, r.total)).size(22.0),
+                    RichText::new(format!("Benar: {}/{}", r.correct, r.total)).size(24.0),
                 );
-                ui.label(RichText::new(format!("Skor terbaik: {}", r.best)).size(22.0));
+                ui.label(RichText::new(format!("Skor terbaik: {}", r.best)).size(24.0));
             });
         });
     if r.new_best {
@@ -837,6 +923,12 @@ fn show_result(ui: &mut egui::Ui, r: &ResultState) -> Action {
     {
         action = Action::ToMenu;
     }
+    // Void di bawah tombol pada v2.3: kartu hasil + tombol hanya ~380pt.
+    // Strip maskot didorong ke dasar layar seperti di layar kuis.
+    ui.add_space(12.0);
+    push_to_bottom(ctx, ui, 52.0);
+    mascot_strip(ctx, ui, textures, 40.0);
+    ui.add_space(8.0);
     action
 }
 
@@ -846,7 +938,7 @@ pub fn android_main(app: android_activity::AndroidApp) {
     android_logger::init_once(
         android_logger::Config::default().with_max_level(log::LevelFilter::Info),
     );
-    log::info!("Hozin Kuis v2.3 (Rust) mulai");
+    log::info!("Hozin Kuis v2.4 (Rust) mulai");
     let data_path = app
         .internal_data_path()
         .unwrap_or_else(|| PathBuf::from("."));

@@ -1,6 +1,6 @@
 [package]
 name = "hozin-kuis"
-version = "2.3.0"
+version = "2.4.0"
 edition = "2021"
 description = "Hozin Kuis — game kuis offline (Trivia Bahasa Indonesia + Tebak Pokemon), ditulis penuh dalam Rust"
 license = "MIT"

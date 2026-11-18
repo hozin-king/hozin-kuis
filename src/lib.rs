@@ -1,4 +1,4 @@
-// Hozin Kuis v2.0 — full Rust (eframe/egui + android-activity).
+// Hozin Kuis v2.1 — full Rust (eframe/egui + android-activity).
 // Offline penuh: bank soal Bahasa Indonesia + data/sprite 151 Pokemon Gen 1
 // dibundel di binary. Tanpa WebView, tanpa iklan, tanpa IAP, tanpa login,
 // tanpa network saat runtime.
@@ -6,8 +6,8 @@ mod pokemon_data;
 mod questions_data;
 
 use egui::{
-    Align, Button, Color32, ColorImage, FontFamily, FontId, Layout, ProgressBar, RichText,
-    TextStyle, TextureHandle, TextureOptions, Vec2,
+    Align, Button, Color32, ColorImage, CornerRadius, FontFamily, FontId, Layout, ProgressBar,
+    RichText, TextStyle, TextureHandle, TextureOptions, Vec2,
 };
 use rand::seq::SliceRandom;
 use std::collections::HashMap;
@@ -19,6 +19,11 @@ include!(concat!(env!("OUT_DIR"), "/sprites.rs"));
 const QUESTION_SECS: u64 = 30;
 const ROUND_LEN: usize = 10;
 const CATEGORIES: [&str; 6] = ["Umum", "Sains", "Sejarah", "Olahraga", "Film", "Komputer"];
+
+// Palet v2.1: satu aksen konsisten (biru terang) untuk tombol utama +
+// pilihan terpilih; hijau/merah hanya untuk benar/salah (di bawah).
+const ACCENT: Color32 = Color32::from_rgb(0, 170, 210);
+const MUTED: Color32 = Color32::from_rgb(165, 175, 185);
 
 #[derive(Clone, Copy, PartialEq)]
 enum Mode {
@@ -91,7 +96,7 @@ impl KuisApp {
         let mut style = (*cc.egui_ctx.style()).clone();
         style.text_styles.insert(
             TextStyle::Heading,
-            FontId::new(30.0, FontFamily::Proportional),
+            FontId::new(34.0, FontFamily::Proportional),
         );
         style.text_styles.insert(
             TextStyle::Body,
@@ -107,6 +112,16 @@ impl KuisApp {
         );
         style.spacing.button_padding = Vec2::new(16.0, 14.0);
         style.spacing.item_spacing = Vec2::new(10.0, 12.0);
+        // Palet v2.1: sudut membulat + tombol sedikit lebih terang dari latar,
+        // pilihan terpilih memakai aksen.
+        style.visuals.selection.bg_fill = ACCENT;
+        style.visuals.widgets.inactive.corner_radius = CornerRadius::same(12);
+        style.visuals.widgets.hovered.corner_radius = CornerRadius::same(12);
+        style.visuals.widgets.active.corner_radius = CornerRadius::same(12);
+        style.visuals.widgets.noninteractive.corner_radius = CornerRadius::same(12);
+        style.visuals.widgets.inactive.bg_fill = Color32::from_rgb(45, 52, 64);
+        style.visuals.widgets.hovered.bg_fill = Color32::from_rgb(60, 68, 84);
+        style.visuals.widgets.active.bg_fill = Color32::from_rgb(70, 80, 98);
         cc.egui_ctx.set_style(style);
 
         let (best_trivia, best_pokemon) = Self::load_best(&data_path);
@@ -344,11 +359,31 @@ fn show_menu(
 ) -> Action {
     let mut action = Action::None;
     ui.add_space(24.0);
-    ui.label(RichText::new("HOZIN KUIS").size(40.0).strong());
-    ui.label(RichText::new("Trivia Bahasa Indonesia + Tebak Pokemon").size(18.0));
+    ui.label(
+        RichText::new("HOZIN KUIS")
+            .size(48.0)
+            .strong()
+            .color(ACCENT),
+    );
+    ui.label(
+        RichText::new("Trivia Bahasa Indonesia + Tebak Pokemon")
+            .size(18.0)
+            .color(MUTED),
+    );
     ui.add_space(16.0);
-    ui.label(RichText::new(format!("Skor terbaik Trivia: {best_trivia}")).size(20.0));
-    ui.label(RichText::new(format!("Skor terbaik Pokemon: {best_pokemon}")).size(20.0));
+    egui::Frame::group(ui.style())
+        .corner_radius(CornerRadius::same(14))
+        .show(ui, |ui| {
+            ui.vertical_centered(|ui| {
+                ui.label(
+                    RichText::new(format!("Skor terbaik Trivia: {best_trivia}")).size(20.0),
+                );
+                ui.label(
+                    RichText::new(format!("Skor terbaik Pokemon: {best_pokemon}"))
+                        .size(20.0),
+                );
+            });
+        });
     ui.add_space(16.0);
     ui.label(RichText::new("Kategori Trivia:").size(20.0).strong());
     egui::Grid::new("kategori")
@@ -373,7 +408,13 @@ fn show_menu(
     if ui
         .add_sized(
             Vec2::new(ui.available_width(), 64.0),
-            Button::new(RichText::new("MULAI TRIVIA").size(24.0).strong()),
+            Button::new(
+                RichText::new("MULAI TRIVIA")
+                    .size(24.0)
+                    .strong()
+                    .color(Color32::WHITE),
+            )
+            .fill(ACCENT),
         )
         .clicked()
     {
@@ -383,14 +424,24 @@ fn show_menu(
     if ui
         .add_sized(
             Vec2::new(ui.available_width(), 64.0),
-            Button::new(RichText::new("MULAI TEBAK POKEMON").size(24.0).strong()),
+            Button::new(
+                RichText::new("MULAI TEBAK POKEMON")
+                    .size(24.0)
+                    .strong()
+                    .color(Color32::WHITE),
+            )
+            .fill(ACCENT),
         )
         .clicked()
     {
         action = Action::StartPokemon;
     }
     ui.add_space(16.0);
-    ui.label(RichText::new("Offline \u{2022} 120 soal \u{2022} 151 Pokemon Gen 1").size(16.0));
+    ui.label(
+        RichText::new("Offline \u{2022} 120 soal \u{2022} 151 Pokemon Gen 1")
+            .size(16.0)
+            .color(MUTED),
+    );
     action
 }
 
@@ -474,7 +525,7 @@ fn show_quiz(
         ui.add(ProgressBar::new(0.0).text("Waktu berhenti"));
     }
     ui.add_space(12.0);
-    ui.label(RichText::new(&item.prompt).size(24.0).strong());
+    ui.label(RichText::new(&item.prompt).size(26.0).strong());
     ui.add_space(8.0);
 
     // PERBAIKAN SILUET (bug v1.0: hitam di atas hitam): sprite selalu digambar
@@ -542,13 +593,23 @@ fn show_quiz(
             }
             Some(_) => format!("Salah. Jawaban benar: {benar}"),
         };
+        let msg_color = match chosen {
+            Some(c) if *c == item.answer => Color32::from_rgb(80, 200, 110),
+            _ => Color32::from_rgb(230, 110, 110),
+        };
         ui.add_space(8.0);
-        ui.label(RichText::new(msg).size(22.0).strong());
+        ui.label(RichText::new(msg).size(22.0).strong().color(msg_color));
         ui.add_space(8.0);
         if ui
             .add_sized(
                 Vec2::new(ui.available_width(), 60.0),
-                Button::new(RichText::new("LANJUT").size(22.0).strong()),
+                Button::new(
+                    RichText::new("LANJUT")
+                        .size(22.0)
+                        .strong()
+                        .color(Color32::WHITE),
+                )
+                .fill(ACCENT),
             )
             .clicked()
         {
@@ -566,13 +627,19 @@ fn show_result(ui: &mut egui::Ui, r: &ResultState) -> Action {
         Mode::Trivia => "Trivia",
         Mode::Pokemon => "Tebak Pokemon",
     };
-    ui.label(RichText::new(mode_name).size(22.0));
+    ui.label(RichText::new(mode_name).size(22.0).color(MUTED));
     ui.add_space(12.0);
-    ui.label(RichText::new(format!("Skor: {}", r.score)).size(26.0).strong());
-    ui.label(
-        RichText::new(format!("Benar: {}/{}", r.correct, r.total)).size(22.0),
-    );
-    ui.label(RichText::new(format!("Skor terbaik: {}", r.best)).size(22.0));
+    egui::Frame::group(ui.style())
+        .corner_radius(CornerRadius::same(14))
+        .show(ui, |ui| {
+            ui.vertical_centered(|ui| {
+                ui.label(RichText::new(format!("Skor: {}", r.score)).size(26.0).strong());
+                ui.label(
+                    RichText::new(format!("Benar: {}/{}", r.correct, r.total)).size(22.0),
+                );
+                ui.label(RichText::new(format!("Skor terbaik: {}", r.best)).size(22.0));
+            });
+        });
     if r.new_best {
         ui.add_space(8.0);
         ui.label(
@@ -586,7 +653,13 @@ fn show_result(ui: &mut egui::Ui, r: &ResultState) -> Action {
     if ui
         .add_sized(
             Vec2::new(ui.available_width(), 64.0),
-            Button::new(RichText::new("MAIN LAGI").size(24.0).strong()),
+            Button::new(
+                RichText::new("MAIN LAGI")
+                    .size(24.0)
+                    .strong()
+                    .color(Color32::WHITE),
+            )
+            .fill(ACCENT),
         )
         .clicked()
     {
@@ -611,7 +684,7 @@ pub fn android_main(app: android_activity::AndroidApp) {
     android_logger::init_once(
         android_logger::Config::default().with_max_level(log::LevelFilter::Info),
     );
-    log::info!("Hozin Kuis v2.0 (Rust) mulai");
+    log::info!("Hozin Kuis v2.1 (Rust) mulai");
     let data_path = app
         .internal_data_path()
         .unwrap_or_else(|| PathBuf::from("."));

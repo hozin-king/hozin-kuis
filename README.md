@@ -26,8 +26,8 @@ APK hanya dibangun di GitHub Actions. Rilis otomatis saat push ke `main`.
 - Target: `aarch64-linux-android` (arm64-v8a)
 - Signing: keystore debug persisten (secret `DEBUG_KEYSTORE_BASE64`,
   `CARGO_APK_RELEASE_KEYSTORE` + password `android` saat build)
-- Versi: Cargo `2.0.0` → versionName `2.0.0`, versionCode dari semver
-  (cargo-apk; tidak bisa di-override di TOML). Rilis GitHub: tag `v2.0`.
+- Versi: Cargo `2.1.0` → versionName `2.1.0`, versionCode dari semver
+  (cargo-apk; tidak bisa di-override di TOML). Rilis GitHub: tag `v2.1`.
 
 ## Riwayat
 
@@ -35,6 +35,8 @@ APK hanya dibangun di GitHub Actions. Rilis otomatis saat push ke `main`.
   Tebak Pokemon dari PokeAPI (butuh internet).
 - **v2.0 (code 2)** — tulis ulang penuh Rust; soal Indonesia + offline penuh;
   siluet diperbaiki (latar terang).
+- **v2.1** — polish UI saja: palet aksen, tombol utama, sudut membulat,
+  kartu skor; fungsi tidak berubah.
 
 ## Data
 

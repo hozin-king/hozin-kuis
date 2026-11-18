@@ -26,8 +26,8 @@ APK hanya dibangun di GitHub Actions. Rilis otomatis saat push ke `main`.
 - Target: `aarch64-linux-android` (arm64-v8a)
 - Signing: keystore debug persisten (secret `DEBUG_KEYSTORE_BASE64`,
   `CARGO_APK_RELEASE_KEYSTORE` + password `android` saat build)
-- Versi: Cargo `2.1.0` → versionName `2.1.0`, versionCode dari semver
-  (cargo-apk; tidak bisa di-override di TOML). Rilis GitHub: tag `v2.1`.
+- Versi: Cargo `2.2.0` → versionName `2.2.0`, versionCode dari semver
+  (cargo-apk; tidak bisa di-override di TOML). Rilis GitHub: tag `v2.2`.
 
 ## Riwayat
 
@@ -37,6 +37,10 @@ APK hanya dibangun di GitHub Actions. Rilis otomatis saat push ke `main`.
   siluet diperbaiki (latar terang).
 - **v2.1** — polish UI saja: palet aksen, tombol utama, sudut membulat,
   kartu skor; fungsi tidak berubah.
+- **v2.2** — redesain UI benar-benar: latar gradien, layout isi layar penuh,
+  banner judul, maskot sprite Pokemon, chip berwarna per kategori/kesulitan,
+  tombol Trivia biru / Pokemon emas, kartu soal, jawaban A-D, indikator
+  progres; fungsi tidak berubah.
 
 ## Data
 

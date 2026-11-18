@@ -1,13 +1,15 @@
-// Hozin Kuis v2.1 — full Rust (eframe/egui + android-activity).
+// Hozin Kuis v2.2 — full Rust (eframe/egui + android-activity).
 // Offline penuh: bank soal Bahasa Indonesia + data/sprite 151 Pokemon Gen 1
 // dibundel di binary. Tanpa WebView, tanpa iklan, tanpa IAP, tanpa login,
 // tanpa network saat runtime.
 mod pokemon_data;
 mod questions_data;
 
+use egui::epaint::Mesh;
 use egui::{
-    Align, Button, Color32, ColorImage, CornerRadius, FontFamily, FontId, Layout, ProgressBar,
-    RichText, TextStyle, TextureHandle, TextureOptions, Vec2,
+    Align, Button, Color32, ColorImage, CornerRadius, FontFamily, FontId, Frame, LayerId,
+    Layout, Margin, ProgressBar, RichText, Shape, Stroke, TextStyle, TextureHandle,
+    TextureOptions, Vec2,
 };
 use rand::seq::SliceRandom;
 use std::collections::HashMap;
@@ -20,10 +22,33 @@ const QUESTION_SECS: u64 = 30;
 const ROUND_LEN: usize = 10;
 const CATEGORIES: [&str; 6] = ["Umum", "Sains", "Sejarah", "Olahraga", "Film", "Komputer"];
 
-// Palet v2.1: satu aksen konsisten (biru terang) untuk tombol utama +
-// pilihan terpilih; hijau/merah hanya untuk benar/salah (di bawah).
+// Palet v2.2: gradien latar biru gelap -> ungu + aksen biru terang;
+// hijau/merah hanya untuk benar/salah (di bawah).
 const ACCENT: Color32 = Color32::from_rgb(0, 170, 210);
 const MUTED: Color32 = Color32::from_rgb(165, 175, 185);
+const GRAD_TOP: Color32 = Color32::from_rgb(10, 18, 48);
+const GRAD_MID: Color32 = Color32::from_rgb(26, 22, 70);
+const GRAD_BOT: Color32 = Color32::from_rgb(56, 20, 84);
+const CARD: Color32 = Color32::from_rgb(18, 26, 54);
+const CHIP_DARK: Color32 = Color32::from_rgb(45, 52, 64);
+const POKEMON_GOLD: Color32 = Color32::from_rgb(230, 160, 30);
+// Warna tiap kategori / tingkat kesulitan (hanya tampilan;
+// logika seleksi tidak berubah).
+const CAT_COLORS: [Color32; 6] = [
+    Color32::from_rgb(0, 170, 210),   // Umum — biru
+    Color32::from_rgb(46, 160, 67),   // Sains — hijau
+    Color32::from_rgb(230, 160, 30),  // Sejarah — emas
+    Color32::from_rgb(220, 90, 60),   // Olahraga — merah-oranye
+    Color32::from_rgb(150, 90, 220),  // Film — ungu
+    Color32::from_rgb(30, 180, 170),  // Komputer — teal
+];
+const DIFF_COLORS: [Color32; 3] = [
+    Color32::from_rgb(46, 160, 67),  // Mudah — hijau
+    Color32::from_rgb(230, 160, 30), // Sedang — emas
+    Color32::from_rgb(200, 60, 60),  // Sulit — merah
+];
+// Maskot menu: starter + Pikachu + Eevee (sprite sudah dibundel).
+const MASCOTS: [u32; 5] = [1, 4, 7, 25, 133];
 
 #[derive(Clone, Copy, PartialEq)]
 enum Mode {
@@ -112,8 +137,10 @@ impl KuisApp {
         );
         style.spacing.button_padding = Vec2::new(16.0, 14.0);
         style.spacing.item_spacing = Vec2::new(10.0, 12.0);
-        // Palet v2.1: sudut membulat + tombol sedikit lebih terang dari latar,
-        // pilihan terpilih memakai aksen.
+        // Palet v2.2: sudut membulat + tombol sedikit lebih terang dari latar,
+        // pilihan terpilih memakai aksen. Panel dibuat transparan supaya
+        // gradien latar (paint_background) terlihat di seluruh layar.
+        style.visuals.panel_fill = Color32::TRANSPARENT;
         style.visuals.selection.bg_fill = ACCENT;
         style.visuals.widgets.inactive.corner_radius = CornerRadius::same(12);
         style.visuals.widgets.hovered.corner_radius = CornerRadius::same(12);
@@ -319,6 +346,8 @@ impl eframe::App for KuisApp {
             self.answer(None);
         }
 
+        paint_background(ctx);
+
         let action = egui::CentralPanel::default()
             .show(ctx, |ui| {
                 ui.vertical_centered(|ui| match &mut self.screen {
@@ -326,7 +355,7 @@ impl eframe::App for KuisApp {
                         let cat = &mut self.menu_category;
                         let dif = &mut self.menu_difficulty;
                         let (bt, bp) = (self.best_trivia, self.best_pokemon);
-                        show_menu(ui, cat, dif, bt, bp)
+                        show_menu(ctx, ui, cat, dif, bt, bp, &mut self.textures)
                     }
                     Screen::Quiz(q) => show_quiz(ctx, ui, q, &mut self.textures),
                     Screen::Result(r) => show_result(ui, r),
@@ -350,27 +379,111 @@ impl eframe::App for KuisApp {
     }
 }
 
+fn paint_background(ctx: &egui::Context) {
+    // Gradien vertikal 3 titik (biru gelap -> indigo -> ungu) menutupi
+    // seluruh layar; satu mesh, tanpa aset gambar.
+    let rect = ctx.screen_rect();
+    let mid_y = rect.top() + rect.height() * 0.55;
+    let mut mesh = Mesh::default();
+    let a = mesh.colored_vertex(rect.left_top(), GRAD_TOP);
+    let b = mesh.colored_vertex(rect.right_top(), GRAD_TOP);
+    let c = mesh.colored_vertex(egui::pos2(rect.left(), mid_y), GRAD_MID);
+    let d = mesh.colored_vertex(egui::pos2(rect.right(), mid_y), GRAD_MID);
+    let e = mesh.colored_vertex(rect.left_bottom(), GRAD_BOT);
+    let f = mesh.colored_vertex(rect.right_bottom(), GRAD_BOT);
+    mesh.add_triangle(a, b, c);
+    mesh.add_triangle(b, d, c);
+    mesh.add_triangle(c, d, e);
+    mesh.add_triangle(d, f, e);
+    ctx.layer_painter(LayerId::background())
+        .add(Shape::Mesh(mesh));
+}
+
+// Chip seleksi: terpilih berisi warna kategori, tidak terpilih gelap + teks berwarna.
+fn chip(
+    ui: &mut egui::Ui,
+    width: f32,
+    selected: bool,
+    color: Color32,
+    text: &str,
+) -> egui::Response {
+    let btn = Button::new(
+        RichText::new(text)
+            .size(20.0)
+            .color(if selected { Color32::WHITE } else { color }),
+    );
+    let btn = if selected {
+        btn.fill(color)
+    } else {
+        btn.fill(CHIP_DARK)
+    };
+    ui.add_sized(Vec2::new(width, 52.0), btn)
+}
+
+// Indikator progres ronde: titik per soal (terisi = sudah dijawab).
+fn progress_dots(ui: &mut egui::Ui, idx: usize, total: usize) {
+    ui.horizontal_centered(|ui| {
+        for n in 0..total {
+            let (rect, _) =
+                ui.allocate_exact_size(Vec2::new(18.0, 18.0), egui::Sense::hover());
+            let col = if n < idx {
+                ACCENT
+            } else if n == idx {
+                Color32::WHITE
+            } else {
+                Color32::from_rgb(60, 68, 84)
+            };
+            ui.painter_at(rect).circle_filled(rect.center(), 7.0, col);
+        }
+    });
+}
+
 fn show_menu(
+    ctx: &egui::Context,
     ui: &mut egui::Ui,
     category: &mut &'static str,
     difficulty: &mut u8,
     best_trivia: i32,
     best_pokemon: i32,
+    textures: &mut HashMap<u32, (TextureHandle, TextureHandle)>,
 ) -> Action {
     let mut action = Action::None;
-    ui.add_space(24.0);
-    ui.label(
-        RichText::new("HOZIN KUIS")
-            .size(48.0)
-            .strong()
-            .color(ACCENT),
-    );
-    ui.label(
-        RichText::new("Trivia Bahasa Indonesia + Tebak Pokemon")
-            .size(18.0)
-            .color(MUTED),
-    );
-    ui.add_space(16.0);
+    let h = ui.available_height();
+    ui.add_space(h * 0.03);
+    // Banner judul ala game: kartu gelap + garis aksen + judul besar.
+    Frame::default()
+        .fill(CARD)
+        .stroke(Stroke::new(2.0, ACCENT))
+        .corner_radius(CornerRadius::same(18))
+        .inner_margin(Margin::symmetric(16, 14))
+        .show(ui, |ui| {
+            ui.vertical_centered(|ui| {
+                ui.label(
+                    RichText::new("HOZIN KUIS")
+                        .size(56.0)
+                        .strong()
+                        .color(ACCENT),
+                );
+                ui.label(
+                    RichText::new("Trivia Bahasa Indonesia + Tebak Pokemon")
+                        .size(18.0)
+                        .color(MUTED),
+                );
+            });
+        });
+    ui.add_space(h * 0.02);
+    // Deretan maskot dari sprite yang sudah dibundel (tanpa aset baru).
+    egui::Frame::group(ui.style())
+        .corner_radius(CornerRadius::same(14))
+        .show(ui, |ui| {
+            ui.horizontal_centered(|ui| {
+                for id in MASCOTS {
+                    let (ct, _) = get_textures(ctx, textures, id);
+                    ui.image((ct.id(), Vec2::new(64.0, 64.0)));
+                }
+            });
+        });
+    ui.add_space(h * 0.02);
     egui::Frame::group(ui.style())
         .corner_radius(CornerRadius::same(14))
         .show(ui, |ui| {
@@ -384,30 +497,34 @@ fn show_menu(
                 );
             });
         });
-    ui.add_space(16.0);
+    ui.add_space(h * 0.02);
     ui.label(RichText::new("Kategori Trivia:").size(20.0).strong());
-    egui::Grid::new("kategori")
-        .num_columns(3)
-        .spacing([8.0, 8.0])
-        .show(ui, |ui| {
-            for (i, cat) in CATEGORIES.iter().enumerate() {
-                ui.selectable_value(category, *cat, *cat);
-                if i % 3 == 2 {
-                    ui.end_row();
+    ui.add_space(4.0);
+    let chip_w = (ui.available_width() - 20.0) / 3.0;
+    for row in 0..2 {
+        ui.horizontal(|ui| {
+            for i in (row * 3)..(row * 3 + 3) {
+                let cat = CATEGORIES[i];
+                if chip(ui, chip_w, *category == cat, CAT_COLORS[i], cat).clicked() {
+                    *category = cat;
                 }
             }
         });
-    ui.add_space(8.0);
+        ui.add_space(8.0);
+    }
     ui.label(RichText::new("Tingkat kesulitan:").size(20.0).strong());
+    ui.add_space(4.0);
     ui.horizontal(|ui| {
         for (v, name) in [(0u8, "Mudah"), (1, "Sedang"), (2, "Sulit")] {
-            ui.selectable_value(difficulty, v, name);
+            if chip(ui, chip_w, *difficulty == v, DIFF_COLORS[v as usize], name).clicked() {
+                *difficulty = v;
+            }
         }
     });
-    ui.add_space(16.0);
+    ui.add_space(h * 0.03);
     if ui
         .add_sized(
-            Vec2::new(ui.available_width(), 64.0),
+            Vec2::new(ui.available_width(), 68.0),
             Button::new(
                 RichText::new("MULAI TRIVIA")
                     .size(24.0)
@@ -420,23 +537,24 @@ fn show_menu(
     {
         action = Action::StartTrivia;
     }
-    ui.add_space(8.0);
+    ui.add_space(10.0);
     if ui
         .add_sized(
-            Vec2::new(ui.available_width(), 64.0),
+            Vec2::new(ui.available_width(), 68.0),
             Button::new(
                 RichText::new("MULAI TEBAK POKEMON")
                     .size(24.0)
                     .strong()
                     .color(Color32::WHITE),
             )
-            .fill(ACCENT),
+            .fill(POKEMON_GOLD),
         )
         .clicked()
     {
         action = Action::StartPokemon;
     }
-    ui.add_space(16.0);
+    // Dorong footer ke bawah layar: tidak ada lagi void hitam di bawah.
+    ui.add_space((ui.available_height() - 28.0).max(0.0));
     ui.label(
         RichText::new("Offline \u{2022} 120 soal \u{2022} 151 Pokemon Gen 1")
             .size(16.0)
@@ -524,9 +642,15 @@ fn show_quiz(
     } else {
         ui.add(ProgressBar::new(0.0).text("Waktu berhenti"));
     }
-    ui.add_space(12.0);
-    ui.label(RichText::new(&item.prompt).size(26.0).strong());
     ui.add_space(8.0);
+    Frame::default()
+        .fill(CARD)
+        .corner_radius(CornerRadius::same(14))
+        .inner_margin(Margin::symmetric(14, 12))
+        .show(ui, |ui| {
+            ui.label(RichText::new(&item.prompt).size(26.0).strong());
+        });
+    ui.add_space(12.0);
 
     // PERBAIKAN SILUET (bug v1.0: hitam di atas hitam): sprite selalu digambar
     // di atas lingkaran LATAR TERANG, jadi siluet hitam pekat jelas kelihatan.
@@ -555,12 +679,14 @@ fn show_quiz(
         ui.add_space(8.0);
     }
 
+    let letters = ["A", "B", "C", "D"];
     for (i, opt) in item.options.iter().enumerate() {
         let text = if matches!(q.mode, Mode::Pokemon) {
             opt.to_uppercase()
         } else {
             opt.clone()
         };
+        let text = format!("{}. {}", letters[i], text);
         let mut btn = Button::new(RichText::new(text).size(22.0));
         if let Phase::Answered { chosen } = &q.phase {
             if i == item.answer {
@@ -570,13 +696,13 @@ fn show_quiz(
             }
         }
         if ui
-            .add_sized(Vec2::new(ui.available_width(), 60.0), btn)
+            .add_sized(Vec2::new(ui.available_width(), 64.0), btn)
             .clicked()
             && matches!(q.phase, Phase::Answering)
         {
             action = Action::Answer(Some(i));
         }
-        ui.add_space(4.0);
+        ui.add_space(8.0);
     }
 
     if let Phase::Answered { chosen } = &q.phase {
@@ -600,6 +726,10 @@ fn show_quiz(
         ui.add_space(8.0);
         ui.label(RichText::new(msg).size(22.0).strong().color(msg_color));
         ui.add_space(8.0);
+        progress_dots(ui, q.idx, q.items.len());
+        ui.add_space(8.0);
+        // Dorong tombol LANJUT ke bawah layar.
+        ui.add_space((ui.available_height() - 60.0).max(0.0));
         if ui
             .add_sized(
                 Vec2::new(ui.available_width(), 60.0),
@@ -615,14 +745,19 @@ fn show_quiz(
         {
             action = Action::Next;
         }
+    } else {
+        // Masih menjawab: dorong indikator progres ke bawah layar.
+        ui.add_space((ui.available_height() - 26.0).max(0.0));
+        progress_dots(ui, q.idx, q.items.len());
     }
     action
 }
 
 fn show_result(ui: &mut egui::Ui, r: &ResultState) -> Action {
     let mut action = Action::None;
-    ui.add_space(24.0);
-    ui.label(RichText::new("SELESAI!").size(36.0).strong());
+    let h = ui.available_height();
+    ui.add_space(h * 0.10);
+    ui.label(RichText::new("SELESAI!").size(44.0).strong());
     let mode_name = match r.mode {
         Mode::Trivia => "Trivia",
         Mode::Pokemon => "Tebak Pokemon",
@@ -650,9 +785,11 @@ fn show_result(ui: &mut egui::Ui, r: &ResultState) -> Action {
         );
     }
     ui.add_space(20.0);
+    // Dorong tombol ke bawah layar.
+    ui.add_space((ui.available_height() - 146.0).max(0.0));
     if ui
         .add_sized(
-            Vec2::new(ui.available_width(), 64.0),
+            Vec2::new(ui.available_width(), 68.0),
             Button::new(
                 RichText::new("MAIN LAGI")
                     .size(24.0)
@@ -665,10 +802,10 @@ fn show_result(ui: &mut egui::Ui, r: &ResultState) -> Action {
     {
         action = Action::PlayAgain(r.mode);
     }
-    ui.add_space(8.0);
+    ui.add_space(10.0);
     if ui
         .add_sized(
-            Vec2::new(ui.available_width(), 64.0),
+            Vec2::new(ui.available_width(), 68.0),
             Button::new(RichText::new("MENU UTAMA").size(24.0).strong()),
         )
         .clicked()
@@ -684,7 +821,7 @@ pub fn android_main(app: android_activity::AndroidApp) {
     android_logger::init_once(
         android_logger::Config::default().with_max_level(log::LevelFilter::Info),
     );
-    log::info!("Hozin Kuis v2.1 (Rust) mulai");
+    log::info!("Hozin Kuis v2.2 (Rust) mulai");
     let data_path = app
         .internal_data_path()
         .unwrap_or_else(|| PathBuf::from("."));

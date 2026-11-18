@@ -77,10 +77,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="v2.1"
-          cp "$APK" "HozinKuis-2.1.apk"
+          TAG="v2.2"
+          cp "$APK" "HozinKuis-2.2.apk"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "HozinKuis-2.1.apk" --clobber
+            gh release upload "$TAG" "HozinKuis-2.2.apk" --clobber
           else
-            gh release create "$TAG" "HozinKuis-2.1.apk" --title "Hozin Kuis 2.1" --notes "v2.1 — polish UI saja (tanpa ubah fungsi): palet aksen biru konsisten, tombol utama berisi aksen, sudut membulat, judul lebih tegas, skor dalam kartu, pesan benar/salah berwarna. Game kuis Android native, ditulis PENUH dalam Rust (cargo-apk + android-activity + egui). 100% OFFLINE: bank 120 soal Trivia Bahasa Indonesia + data dan sprite 151 Pokemon Gen 1 dibundel di aplikasi. Mode Trivia (6 kategori, 3 tingkat) dan Tebak Pokemon (siluet di atas latar terang). 10 soal/ronde, timer 30 detik per soal, skor + streak, skor terbaik tersimpan lokal. Tanpa iklan, tanpa IAP, tanpa login, tanpa internet."
+            gh release create "$TAG" "HozinKuis-2.2.apk" --title "Hozin Kuis 2.2" --notes "v2.2 — redesain UI benar-benar (bukan sekadar ganti warna): latar gradien biru-ungu di seluruh aplikasi, layout mengisi layar penuh (tanpa void hitam di bawah), banner judul ala game, deretan maskot Pokemon dari sprite yang sudah dibundel, chip kategori/kesulitan berwarna per item, tombol utama Trivia biru / Tebak Pokemon emas, kartu soal, pilihan jawaban berhuruf A-D, indikator progres ronde, tombol bawah layar. Fungsi tidak berubah. Game kuis Android native, ditulis PENUH dalam Rust (cargo-apk + android-activity + egui). 100% OFFLINE: bank 120 soal Trivia Bahasa Indonesia + data dan sprite 151 Pokemon Gen 1 dibundel di aplikasi. Mode Trivia (6 kategori, 3 tingkat) dan Tebak Pokemon (siluet di atas latar terang). 10 soal/ronde, timer 30 detik per soal, skor + streak, skor terbaik tersimpan lokal. Tanpa iklan, tanpa IAP, tanpa login, tanpa internet."
           fi

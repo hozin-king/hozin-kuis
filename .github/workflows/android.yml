@@ -81,10 +81,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="v2.4"
-          cp "$APK" "HozinKuis-2.4.apk"
+          TAG="v2.5"
+          cp "$APK" "HozinKuis-2.5.apk"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "HozinKuis-2.4.apk" --clobber
+            gh release upload "$TAG" "HozinKuis-2.5.apk" --clobber
           else
-            gh release create "$TAG" "HozinKuis-2.4.apk" --title "Hozin Kuis 2.4" --notes "v2.4 — poles layar trivia + tombol kembali ke menu utama: kartu soal lebih besar (30pt, min-height 110pt, garis aksen), tombol jawaban A-D 84px dengan tint gelap per huruf (A biru, B hijau, C emas, D ungu), timer terintegrasi rapi (bar 36px + teks 18pt di dalam bar — v2.3 teksnya menumpuk di atas bar), strip 5 maskot didorong ke dasar layar sehingga void ungu besar di bawah titik progres hilang, dan tombol '← Menu' di kiri atas layar trivia (juga di Tebak Pokemon — layar yang sama) untuk kembali ke menu utama kapan saja. Layar hasil ikut dipoles (font skor diperbesar + strip maskot di dasar). Fungsi tidak berubah: 10 soal/ronde, timer 30 detik, skor + streak, skor terbaik lokal. Game kuis Android native, ditulis PENUH dalam Rust (cargo-apk + android-activity + egui). 100% OFFLINE: bank 120 soal Trivia Bahasa Indonesia + data dan sprite 151 Pokemon Gen 1 dibundel di aplikasi. Tanpa iklan, tanpa IAP, tanpa login, tanpa internet."
+            gh release create "$TAG" "HozinKuis-2.5.apk" --title "Hozin Kuis 2.5" --notes "v2.5 — jawaban bisa di-scroll + tombol Menu tidak hilang saat scroll: header kuis (tombol '← Menu', nomor soal, skor, timer) dipindah KE LUAR ScrollArea sehingga tetap terlihat saat jawaban digulir ke bawah; ScrollArea diberi id per soal supaya soal baru selalu mulai dari atas (sebelumnya posisi scroll terbawa dari soal sebelumnya sehingga soal baru bisa terbuka dengan header terpotong); padding bawah 24pt di ekor konten supaya elemen terakhir tidak menempel di tepi bawah layar. Fungsi tidak berubah: 10 soal/ronde, timer 30 detik, skor + streak, skor terbaik lokal. Game kuis Android native, ditulis PENUH dalam Rust (cargo-apk + android-activity + egui). 100% OFFLINE: bank 120 soal Trivia Bahasa Indonesia + data dan sprite 151 Pokemon Gen 1 dibundel di aplikasi. Tanpa iklan, tanpa IAP, tanpa login, tanpa internet."
           fi

@@ -1,4 +1,4 @@
-// Hozin Kuis v2.4 — full Rust (eframe/egui + android-activity).
+// Hozin Kuis v2.5 — full Rust (eframe/egui + android-activity).
 // Offline penuh: bank soal Bahasa Indonesia + data/sprite 151 Pokemon Gen 1
 // dibundel di binary. Tanpa WebView, tanpa iklan, tanpa IAP, tanpa login,
 // tanpa network saat runtime.
@@ -359,26 +359,56 @@ impl eframe::App for KuisApp {
         // ScrollArea vertikal sebagai jaring pengaman: tidak ada lagi elemen
         // yang bisa terdorong ke luar viewport (bug menu v2.2). Konten yang
         // lebih tinggi dari layar bisa di-scroll; yang muat tetap tampil penuh.
+        // v2.5: tiap layar punya id_salt sendiri — dan layar kuis punya id
+        // per soal — supaya posisi scroll TIDAK terbawa dari soal/layar
+        // sebelumnya (tanpa ini, soal baru bisa terbuka dalam keadaan sudah
+        // ter-scroll ke bawah dengan header terpotong). Header kuis (tombol
+        // Menu + skor + timer) dirender DI LUAR ScrollArea supaya tetap
+        // terlihat saat jawaban di-scroll.
         let action = egui::CentralPanel::default()
             .show(ctx, |ui| {
-                egui::ScrollArea::vertical()
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        ui.vertical_centered(|ui| match &mut self.screen {
-                            Screen::Menu => {
+                match &mut self.screen {
+                    Screen::Menu => egui::ScrollArea::vertical()
+                        .auto_shrink([false, false])
+                        .id_salt("menu")
+                        .show(ui, |ui| {
+                            ui.vertical_centered(|ui| {
                                 let cat = &mut self.menu_category;
                                 let dif = &mut self.menu_difficulty;
                                 let (bt, bp) = (self.best_trivia, self.best_pokemon);
                                 show_menu(ctx, ui, cat, dif, bt, bp, &mut self.textures)
-                            }
-                            Screen::Quiz(q) => show_quiz(ctx, ui, q, &mut self.textures),
-                            Screen::Result(r) => {
-                                show_result(ctx, ui, r, &mut self.textures)
-                            }
+                            })
+                            .inner
                         })
-                        .inner
-                    })
-                    .inner
+                        .inner,
+                    Screen::Quiz(q) => {
+                        let mut action = show_quiz_header(ui, q);
+                        let body = egui::ScrollArea::vertical()
+                            .auto_shrink([false, false])
+                            .id_salt(("quiz", matches!(q.mode, Mode::Pokemon), q.idx))
+                            .show(ui, |ui| {
+                                ui.vertical_centered(|ui| {
+                                    show_quiz_body(ctx, ui, q, &mut self.textures)
+                                })
+                                .inner
+                            })
+                            .inner;
+                        if !matches!(body, Action::None) {
+                            action = body;
+                        }
+                        action
+                    }
+                    Screen::Result(r) => egui::ScrollArea::vertical()
+                        .auto_shrink([false, false])
+                        .id_salt("result")
+                        .show(ui, |ui| {
+                            ui.vertical_centered(|ui| {
+                                show_result(ctx, ui, r, &mut self.textures)
+                            })
+                            .inner
+                        })
+                        .inner,
+                }
             })
             .inner;
 
@@ -679,16 +709,13 @@ fn get_textures(
     (ct, st)
 }
 
-fn show_quiz(
-    ctx: &egui::Context,
-    ui: &mut egui::Ui,
-    q: &mut QuizState,
-    textures: &mut HashMap<u32, (TextureHandle, TextureHandle)>,
-) -> Action {
+// Header kuis TETAP (v2.5): dirender di CentralPanel DI LUAR ScrollArea,
+// jadi tombol kembali ke menu, nomor soal, skor, dan timer TIDAK ikut
+// ke-scroll saat pengguna menggulir jawaban ke bawah (bug v2.4: header
+// ikut ter-scroll ke luar layar — di screenshot user, tombol Menu dan
+// timer tidak kelihatan sama sekali setelah scroll).
+fn show_quiz_header(ui: &mut egui::Ui, q: &mut QuizState) -> Action {
     let mut action = Action::None;
-    let item = &q.items[q.idx];
-    let answered = matches!(q.phase, Phase::Answered { .. });
-
     ui.add_space(12.0);
     // Baris atas: tombol kembali ke menu (kiri), nomor soal, skor (kanan).
     ui.horizontal(|ui| {
@@ -737,6 +764,23 @@ fn show_quiz(
         );
     }
     ui.add_space(12.0);
+    action
+}
+
+// Isi kuis yang bisa di-scroll (v2.5): label mode, kartu soal, siluet,
+// petunjuk, jawaban A-D, pesan hasil + titik progres + LANJUT, dan strip
+// maskot di ekor. ScrollArea-nya diberi id per soal (lihat update) supaya
+// tiap soal baru mulai dari atas, tidak mewarisi posisi scroll soal lama.
+fn show_quiz_body(
+    ctx: &egui::Context,
+    ui: &mut egui::Ui,
+    q: &mut QuizState,
+    textures: &mut HashMap<u32, (TextureHandle, TextureHandle)>,
+) -> Action {
+    let mut action = Action::None;
+    let item = &q.items[q.idx];
+    let answered = matches!(q.phase, Phase::Answered { .. });
+
     let mode_name = match q.mode {
         Mode::Trivia => "TRIVIA",
         Mode::Pokemon => "TEBAK POKEMON",
@@ -858,7 +902,10 @@ fn show_quiz(
     ui.add_space(12.0);
     push_to_bottom(ctx, ui, 52.0);
     mascot_strip(ctx, ui, textures, 40.0);
-    ui.add_space(8.0);
+    // Padding bawah (v2.5): tanpa ini, saat konten di-scroll sampai mentok,
+    // elemen terakhir menempel di tepi bawah layar (bug v2.4: opsi D
+    // kelihatan terjepit di tepi bawah tanpa ruang).
+    ui.add_space(24.0);
     action
 }
 
@@ -938,7 +985,7 @@ pub fn android_main(app: android_activity::AndroidApp) {
     android_logger::init_once(
         android_logger::Config::default().with_max_level(log::LevelFilter::Info),
     );
-    log::info!("Hozin Kuis v2.4 (Rust) mulai");
+    log::info!("Hozin Kuis v2.5 (Rust) mulai");
     let data_path = app
         .internal_data_path()
         .unwrap_or_else(|| PathBuf::from("."));

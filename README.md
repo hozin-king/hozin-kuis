@@ -1,21 +1,46 @@
 # Hozin Kuis
 
-Game kuis Android native (Kotlin, tanpa WebView).
+Game kuis Android, ditulis **penuh dalam Rust** (cargo-apk + android-activity + egui).
+Tanpa Kotlin/Java di aplikasi, tanpa WebView, **100% offline**.
 
 ## Mode
 
-- **Trivia** — 10 soal pilihan ganda dari [Open Trivia DB](https://opentdb.com) (gratis, tanpa kunci).
-  Kategori: Umum, Film, Sains, Komputer, Olahraga, Sejarah. Tingkat: Mudah / Sedang / Sulit.
-- **Tebak Pokemon** — 10 ronde dari [PokeAPI](https://pokeapi.co) (gratis, tanpa kunci).
-  Tebak nama Pokemon dari siluet + petunjuk (tipe, tinggi, berat).
+- **Trivia (Bahasa Indonesia)** — 10 soal pilihan ganda dari bank soal lokal
+  (`assets/questions.json`, 120 soal: 6 kategori × 20 — Umum, Sains, Sejarah,
+  Olahraga, Film, Komputer; tiap kategori 6 mudah + 7 sedang + 7 sulit).
+- **Tebak Pokemon** — 10 ronde, 151 Pokemon Gen 1. Data (nama, tipe Bahasa
+  Indonesia, tinggi, berat) dari PokeAPI; sprite PNG dibundel di
+  `assets/pokemon/<id>.png`. Siluet tampil hitam pekat di atas **lingkaran
+  latar terang** (perbaikan bug v1.0: siluet hitam di atas hitam).
 
-Tiap soal: timer 30 detik, skor +10 per jawaban benar, streak, skor terbaik tersimpan lokal.
-Bila offline: pesan "butuh internet untuk ambil soal", tanpa crash. Tanpa iklan, tanpa IAP, tanpa login.
+Tiap soal: timer 30 detik (habis = salah), skor +10 per jawaban benar, streak,
+skor terbaik per mode tersimpan lokal (`best.txt` di internal storage).
+Tanpa iklan, tanpa IAP, tanpa login, tanpa internet.
 
 ## Build
 
-APK hanya dibangun di GitHub Actions (alur temp-publik standar). Rilis otomatis saat push ke `main`.
+APK hanya dibangun di GitHub Actions. Rilis otomatis saat push ke `main`.
 
 - Package: `com.hozinking.kuis`
-- minSdk 26, targetSdk 34, compileSdk 34
-- Signing: keystore debug persisten (secret `DEBUG_KEYSTORE_BASE64`)
+- minSdk 26, targetSdk 34
+- Target: `aarch64-linux-android` (arm64-v8a)
+- Signing: keystore debug persisten (secret `DEBUG_KEYSTORE_BASE64`,
+  `CARGO_APK_RELEASE_KEYSTORE` + password `android` saat build)
+- Versi: Cargo `2.0.0` → versionName `2.0.0`, versionCode dari semver
+  (cargo-apk; tidak bisa di-override di TOML). Rilis GitHub: tag `v2.0`.
+
+## Riwayat
+
+- **v1.0 (code 1)** — Kotlin, soal Trivia dari Open Trivia DB (Inggris) +
+  Tebak Pokemon dari PokeAPI (butuh internet).
+- **v2.0 (code 2)** — tulis ulang penuh Rust; soal Indonesia + offline penuh;
+  siluet diperbaiki (latar terang).
+
+## Data
+
+- `assets/questions.json` — sumber bank soal (dibaca `tools/gen_data.py` ->
+  `src/questions_data.rs`).
+- `src/pokemon_data.rs` — data 151 Pokemon Gen 1 (dibuat `tools/gen_data.py`
+  dari PokeAPI; tipe diterjemahkan ke Bahasa Indonesia).
+- `build.rs` — membundel sprite `assets/pokemon/*.png` ke binary via
+  `include_bytes!` (dicek: tepat 151 file PNG valid).

@@ -1,4 +1,4 @@
-name: Android CI
+name: Android CI (Rust)
 
 on:
   push:
@@ -32,15 +32,39 @@ jobs:
             exit 1
           fi
 
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
       - name: Install Android SDK packages
         run: |
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-34" "build-tools;34.0.0"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-34" "build-tools;34.0.0" "ndk;26.1.10909125"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Install cargo-apk
+        run: cargo install cargo-apk
 
       - name: Build release APK
+        env:
+          CARGO_APK_RELEASE_KEYSTORE: ${{ github.workspace }}/debug.keystore
+          CARGO_APK_RELEASE_KEYSTORE_PASSWORD: android
         run: |
-          chmod +x gradlew
-          ./gradlew assembleRelease --stacktrace
+          export ANDROID_NDK_ROOT="$ANDROID_HOME/ndk/26.1.10909125"
+          cargo --version
+          rustc --version
+          cargo apk build --lib --release
+
+      - name: Verify APK
+        run: |
+          APK=$(ls target/release/apk/*.apk | head -n 1)
+          echo "APK=$APK" >> "$GITHUB_ENV"
+          ls -l "$APK"
+          "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "$APK" | grep -E "package:|application-label"
+          "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --print-certs "$APK"
 
       # TIDAK ada upload-artifact: kuota storage Actions akun terbatas.
       # APK disalurkan lewat GitHub Release di step berikut.
@@ -49,13 +73,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          VERSION=$(grep -oP 'versionName\s*=?\s*"\K[^"]+' app/build.gradle || true)
-          if [ -z "$VERSION" ]; then echo "versionName tidak ditemukan di app/build.gradle"; exit 1; fi
-          TAG="v$VERSION"
-          APK=$(ls app/build/outputs/apk/release/*.apk | head -n 1)
-          cp "$APK" "HozinKuis-$VERSION.apk"
+          TAG="v2.0"
+          cp "$APK" "HozinKuis-2.0.apk"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "HozinKuis-$VERSION.apk" --clobber
+            gh release upload "$TAG" "HozinKuis-2.0.apk" --clobber
           else
-            gh release create "$TAG" "HozinKuis-$VERSION.apk" --title "Hozin Kuis $VERSION" --notes "Game kuis Android native (Kotlin, tanpa WebView). Mode Trivia (soal dari Open Trivia DB — gratis, tanpa kunci) dan Tebak Pokemon (data dari PokeAPI — gratis, tanpa kunci). 10 soal/ronde, timer 30 detik per soal, skor + streak, skor terbaik tersimpan lokal. Butuh internet untuk mengambil soal. Tanpa iklan, tanpa IAP, tanpa login."
+            gh release create "$TAG" "HozinKuis-2.0.apk" --title "Hozin Kuis 2.0" --notes "Game kuis Android native, ditulis PENUH dalam Rust (cargo-apk + android-activity + egui). 100% OFFLINE: bank 120 soal Trivia Bahasa Indonesia + data dan sprite 151 Pokemon Gen 1 dibundel di aplikasi. Mode Trivia (6 kategori, 3 tingkat) dan Tebak Pokemon (siluet di atas latar terang). 10 soal/ronde, timer 30 detik per soal, skor + streak, skor terbaik tersimpan lokal. Tanpa iklan, tanpa IAP, tanpa login, tanpa internet."
           fi

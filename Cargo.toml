@@ -1,0 +1,38 @@
+[package]
+name = "hozin-kuis"
+version = "2.0.0"
+edition = "2021"
+description = "Hozin Kuis — game kuis offline (Trivia Bahasa Indonesia + Tebak Pokemon), ditulis penuh dalam Rust"
+license = "MIT"
+
+# cdylib: cargo-apk mengemas .so ini ke APK via android.app.NativeActivity.
+[lib]
+name = "hozin_kuis"
+crate-type = ["cdylib"]
+
+[dependencies]
+egui = "0.33"
+rand = "0.9"
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+eframe = { version = "0.33", default-features = false, features = ["glow", "android-native-activity", "default_fonts"] }
+android_logger = "0.15"
+log = "0.4"
+
+[package.metadata.android]
+apk_name = "HozinKuis"
+package = "com.hozinking.kuis"
+build_targets = ["aarch64-linux-android"]
+
+[package.metadata.android.sdk]
+min_sdk_version = 26
+target_sdk_version = 34
+
+[package.metadata.android.application]
+label = "Hozin Kuis"
+
+[package.metadata.android.application.activity]
+orientation = "portrait"
+exported = true
+launch_mode = "singleTop"

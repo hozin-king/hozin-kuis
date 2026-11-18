@@ -1,0 +1,629 @@
+// Hozin Kuis v2.0 — full Rust (eframe/egui + android-activity).
+// Offline penuh: bank soal Bahasa Indonesia + data/sprite 151 Pokemon Gen 1
+// dibundel di binary. Tanpa WebView, tanpa iklan, tanpa IAP, tanpa login,
+// tanpa network saat runtime.
+mod pokemon_data;
+mod questions_data;
+
+use egui::{
+    Align, Button, Color32, ColorImage, FontFamily, FontId, Layout, ProgressBar, RichText,
+    TextStyle, TextureHandle, TextureOptions, Vec2,
+};
+use rand::seq::SliceRandom;
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::time::{Duration, Instant};
+
+include!(concat!(env!("OUT_DIR"), "/sprites.rs"));
+
+const QUESTION_SECS: u64 = 30;
+const ROUND_LEN: usize = 10;
+const CATEGORIES: [&str; 6] = ["Umum", "Sains", "Sejarah", "Olahraga", "Film", "Komputer"];
+
+#[derive(Clone, Copy, PartialEq)]
+enum Mode {
+    Trivia,
+    Pokemon,
+}
+
+struct QuizItem {
+    prompt: String,
+    hint: Option<String>,
+    pokemon_id: Option<u32>,
+    options: [String; 4],
+    answer: usize,
+}
+
+#[derive(Clone, Copy)]
+enum Phase {
+    Answering,
+    Answered { chosen: Option<usize> },
+}
+
+struct QuizState {
+    mode: Mode,
+    items: Vec<QuizItem>,
+    idx: usize,
+    score: i32,
+    streak: i32,
+    correct: usize,
+    phase: Phase,
+    deadline: Instant,
+}
+
+struct ResultState {
+    mode: Mode,
+    score: i32,
+    correct: usize,
+    total: usize,
+    best: i32,
+    new_best: bool,
+}
+
+enum Screen {
+    Menu,
+    Quiz(QuizState),
+    Result(ResultState),
+}
+
+enum Action {
+    None,
+    StartTrivia,
+    StartPokemon,
+    Answer(Option<usize>),
+    Next,
+    PlayAgain(Mode),
+    ToMenu,
+}
+
+struct KuisApp {
+    screen: Screen,
+    menu_category: &'static str,
+    menu_difficulty: u8,
+    best_trivia: i32,
+    best_pokemon: i32,
+    data_path: PathBuf,
+    textures: HashMap<u32, (TextureHandle, TextureHandle)>,
+}
+
+impl KuisApp {
+    fn new(cc: &eframe::CreationContext<'_>, data_path: PathBuf) -> Self {
+        let mut style = (*cc.egui_ctx.style()).clone();
+        style.text_styles.insert(
+            TextStyle::Heading,
+            FontId::new(30.0, FontFamily::Proportional),
+        );
+        style.text_styles.insert(
+            TextStyle::Body,
+            FontId::new(22.0, FontFamily::Proportional),
+        );
+        style.text_styles.insert(
+            TextStyle::Button,
+            FontId::new(22.0, FontFamily::Proportional),
+        );
+        style.text_styles.insert(
+            TextStyle::Small,
+            FontId::new(17.0, FontFamily::Proportional),
+        );
+        style.spacing.button_padding = Vec2::new(16.0, 14.0);
+        style.spacing.item_spacing = Vec2::new(10.0, 12.0);
+        cc.egui_ctx.set_style(style);
+
+        let (best_trivia, best_pokemon) = Self::load_best(&data_path);
+        Self {
+            screen: Screen::Menu,
+            menu_category: "Umum",
+            menu_difficulty: 0,
+            best_trivia,
+            best_pokemon,
+            data_path,
+            textures: HashMap::new(),
+        }
+    }
+
+    fn best_path(&self) -> PathBuf {
+        self.data_path.join("best.txt")
+    }
+
+    fn load_best(data_path: &PathBuf) -> (i32, i32) {
+        match std::fs::read_to_string(data_path.join("best.txt")) {
+            Ok(s) => {
+                let mut it = s.lines();
+                let t = it.next().and_then(|v| v.trim().parse().ok()).unwrap_or(0);
+                let p = it.next().and_then(|v| v.trim().parse().ok()).unwrap_or(0);
+                (t, p)
+            }
+            Err(_) => (0, 0),
+        }
+    }
+
+    fn save_best(&self) {
+        let _ = std::fs::write(
+            self.best_path(),
+            format!("{}\n{}\n", self.best_trivia, self.best_pokemon),
+        );
+    }
+
+    fn start_trivia(&mut self) {
+        let mut rng = rand::rng();
+        // Pool kategori ini; soal tingkat terpilih didahulukan, sisanya pengisi.
+        let mut pool: Vec<&questions_data::Question> = questions_data::QUESTIONS
+            .iter()
+            .filter(|q| q.category == self.menu_category)
+            .collect();
+        pool.shuffle(&mut rng);
+        pool.sort_by_key(|q| q.difficulty != self.menu_difficulty);
+        let mut items = Vec::new();
+        for q in pool.into_iter().take(ROUND_LEN) {
+            let mut opts: Vec<(usize, &str)> =
+                q.options.iter().enumerate().collect();
+            opts.shuffle(&mut rng);
+            let answer = opts.iter().position(|(i, _)| *i == q.answer).unwrap();
+            let options: [String; 4] = opts
+                .iter()
+                .map(|(_, s)| s.to_string())
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap();
+            items.push(QuizItem {
+                prompt: q.text.to_string(),
+                hint: None,
+                pokemon_id: None,
+                options,
+                answer,
+            });
+        }
+        self.screen = Screen::Quiz(QuizState {
+            mode: Mode::Trivia,
+            items,
+            idx: 0,
+            score: 0,
+            streak: 0,
+            correct: 0,
+            phase: Phase::Answering,
+            deadline: Instant::now() + Duration::from_secs(QUESTION_SECS),
+        });
+    }
+
+    fn start_pokemon(&mut self) {
+        let mut rng = rand::rng();
+        let mut ids: Vec<u32> = (1..=151).collect();
+        ids.shuffle(&mut rng);
+        let mut items = Vec::new();
+        for id in ids.into_iter().take(ROUND_LEN) {
+            let p = &pokemon_data::POKEMON[(id - 1) as usize];
+            let mut others: Vec<u32> = (1..=151).filter(|x| *x != id).collect();
+            others.shuffle(&mut rng);
+            let mut opts: Vec<String> = others
+                .into_iter()
+                .take(3)
+                .map(|x| pokemon_data::POKEMON[(x - 1) as usize].name.to_string())
+                .collect();
+            opts.push(p.name.to_string());
+            opts.shuffle(&mut rng);
+            let answer = opts.iter().position(|n| n == p.name).unwrap();
+            let options: [String; 4] = opts.try_into().unwrap();
+            items.push(QuizItem {
+                prompt: "Siapa Pokemon ini?".to_string(),
+                hint: Some(format!(
+                    "Tipe: {} \u{2022} Tinggi: {:.1} m \u{2022} Berat: {:.1} kg",
+                    p.types, p.height_m, p.weight_kg
+                )),
+                pokemon_id: Some(id),
+                options,
+                answer,
+            });
+        }
+        self.screen = Screen::Quiz(QuizState {
+            mode: Mode::Pokemon,
+            items,
+            idx: 0,
+            score: 0,
+            streak: 0,
+            correct: 0,
+            phase: Phase::Answering,
+            deadline: Instant::now() + Duration::from_secs(QUESTION_SECS),
+        });
+    }
+
+    fn answer(&mut self, chosen: Option<usize>) {
+        if let Screen::Quiz(q) = &mut self.screen {
+            if !matches!(q.phase, Phase::Answering) {
+                return;
+            }
+            let correct = chosen == Some(q.items[q.idx].answer);
+            if correct {
+                q.score += 10;
+                q.streak += 1;
+                q.correct += 1;
+            } else {
+                q.streak = 0;
+            }
+            q.phase = Phase::Answered { chosen };
+        }
+    }
+
+    fn next(&mut self) {
+        let screen = std::mem::replace(&mut self.screen, Screen::Menu);
+        if let Screen::Quiz(mut q) = screen {
+            q.idx += 1;
+            if q.idx >= q.items.len() {
+                let total = q.items.len();
+                let (best, is_new) = match q.mode {
+                    Mode::Trivia => {
+                        let nb = q.score > self.best_trivia;
+                        if nb {
+                            self.best_trivia = q.score;
+                        }
+                        (self.best_trivia, nb)
+                    }
+                    Mode::Pokemon => {
+                        let nb = q.score > self.best_pokemon;
+                        if nb {
+                            self.best_pokemon = q.score;
+                        }
+                        (self.best_pokemon, nb)
+                    }
+                };
+                if is_new {
+                    self.save_best();
+                }
+                self.screen = Screen::Result(ResultState {
+                    mode: q.mode,
+                    score: q.score,
+                    correct: q.correct,
+                    total,
+                    best,
+                    new_best: is_new,
+                });
+            } else {
+                q.phase = Phase::Answering;
+                q.deadline = Instant::now() + Duration::from_secs(QUESTION_SECS);
+                self.screen = Screen::Quiz(q);
+            }
+        } else {
+            self.screen = screen;
+        }
+    }
+}
+
+impl eframe::App for KuisApp {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Timer habis saat masih menjawab -> dihitung salah (tanpa pilihan).
+        let mut timed_out = false;
+        if let Screen::Quiz(q) = &mut self.screen {
+            if matches!(q.phase, Phase::Answering) {
+                if Instant::now() >= q.deadline {
+                    timed_out = true;
+                } else {
+                    ctx.request_repaint_after(Duration::from_millis(100));
+                }
+            }
+        }
+        if timed_out {
+            self.answer(None);
+        }
+
+        let action = egui::CentralPanel::default()
+            .show(ctx, |ui| {
+                ui.vertical_centered(|ui| match &mut self.screen {
+                    Screen::Menu => {
+                        let cat = &mut self.menu_category;
+                        let dif = &mut self.menu_difficulty;
+                        let (bt, bp) = (self.best_trivia, self.best_pokemon);
+                        show_menu(ui, cat, dif, bt, bp)
+                    }
+                    Screen::Quiz(q) => show_quiz(ctx, ui, q, &mut self.textures),
+                    Screen::Result(r) => show_result(ui, r),
+                })
+                .inner
+            })
+            .inner;
+
+        match action {
+            Action::None => {}
+            Action::StartTrivia => self.start_trivia(),
+            Action::StartPokemon => self.start_pokemon(),
+            Action::Answer(c) => self.answer(c),
+            Action::Next => self.next(),
+            Action::PlayAgain(m) => match m {
+                Mode::Trivia => self.start_trivia(),
+                Mode::Pokemon => self.start_pokemon(),
+            },
+            Action::ToMenu => self.screen = Screen::Menu,
+        }
+    }
+}
+
+fn show_menu(
+    ui: &mut egui::Ui,
+    category: &mut &'static str,
+    difficulty: &mut u8,
+    best_trivia: i32,
+    best_pokemon: i32,
+) -> Action {
+    let mut action = Action::None;
+    ui.add_space(24.0);
+    ui.label(RichText::new("HOZIN KUIS").size(40.0).strong());
+    ui.label(RichText::new("Trivia Bahasa Indonesia + Tebak Pokemon").size(18.0));
+    ui.add_space(16.0);
+    ui.label(RichText::new(format!("Skor terbaik Trivia: {best_trivia}")).size(20.0));
+    ui.label(RichText::new(format!("Skor terbaik Pokemon: {best_pokemon}")).size(20.0));
+    ui.add_space(16.0);
+    ui.label(RichText::new("Kategori Trivia:").size(20.0).strong());
+    egui::Grid::new("kategori")
+        .num_columns(3)
+        .spacing([8.0, 8.0])
+        .show(ui, |ui| {
+            for (i, cat) in CATEGORIES.iter().enumerate() {
+                ui.selectable_value(category, *cat, *cat);
+                if i % 3 == 2 {
+                    ui.end_row();
+                }
+            }
+        });
+    ui.add_space(8.0);
+    ui.label(RichText::new("Tingkat kesulitan:").size(20.0).strong());
+    ui.horizontal(|ui| {
+        for (v, name) in [(0u8, "Mudah"), (1, "Sedang"), (2, "Sulit")] {
+            ui.selectable_value(difficulty, v, name);
+        }
+    });
+    ui.add_space(16.0);
+    if ui
+        .add_sized(
+            Vec2::new(ui.available_width(), 64.0),
+            Button::new(RichText::new("MULAI TRIVIA").size(24.0).strong()),
+        )
+        .clicked()
+    {
+        action = Action::StartTrivia;
+    }
+    ui.add_space(8.0);
+    if ui
+        .add_sized(
+            Vec2::new(ui.available_width(), 64.0),
+            Button::new(RichText::new("MULAI TEBAK POKEMON").size(24.0).strong()),
+        )
+        .clicked()
+    {
+        action = Action::StartPokemon;
+    }
+    ui.add_space(16.0);
+    ui.label(RichText::new("Offline \u{2022} 120 soal \u{2022} 151 Pokemon Gen 1").size(16.0));
+    action
+}
+
+fn decode_png(bytes: &[u8]) -> ColorImage {
+    match image::load_from_memory(bytes) {
+        Ok(img) => {
+            let rgba = img.to_rgba8();
+            let (w, h) = rgba.dimensions();
+            ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &rgba.into_raw())
+        }
+        Err(_) => ColorImage::new([96, 96], Color32::TRANSPARENT),
+    }
+}
+
+fn silhouette(img: &ColorImage) -> ColorImage {
+    let mut px = img.pixels.clone();
+    for p in px.iter_mut() {
+        if p.a() > 0 {
+            *p = Color32::BLACK;
+        }
+    }
+    ColorImage {
+        size: img.size,
+        pixels: px,
+    }
+}
+
+fn get_textures(
+    ctx: &egui::Context,
+    cache: &mut HashMap<u32, (TextureHandle, TextureHandle)>,
+    id: u32,
+) -> (TextureHandle, TextureHandle) {
+    if let Some(t) = cache.get(&id) {
+        return t.clone();
+    }
+    let bytes = SPRITES
+        .iter()
+        .find(|(i, _)| *i == id)
+        .map(|(_, b)| *b)
+        .unwrap_or(&[]);
+    let color = decode_png(bytes);
+    let sil = silhouette(&color);
+    let mut opts = TextureOptions::default();
+    opts.magnification = egui::TextureFilter::Nearest;
+    let ct = ctx.load_texture(format!("poke-{id}-color"), color, opts);
+    let st = ctx.load_texture(format!("poke-{id}-sil"), sil, opts);
+    cache.insert(id, (ct.clone(), st.clone()));
+    (ct, st)
+}
+
+fn show_quiz(
+    ctx: &egui::Context,
+    ui: &mut egui::Ui,
+    q: &mut QuizState,
+    textures: &mut HashMap<u32, (TextureHandle, TextureHandle)>,
+) -> Action {
+    let mut action = Action::None;
+    let item = &q.items[q.idx];
+    let answered = matches!(q.phase, Phase::Answered { .. });
+
+    ui.add_space(12.0);
+    ui.horizontal(|ui| {
+        ui.label(
+            RichText::new(format!("Soal {}/{}", q.idx + 1, q.items.len())).size(20.0),
+        );
+        ui.with_layout(Layout::right_to_left(Align::TOP), |ui| {
+            let skor = if q.streak >= 2 {
+                format!("Skor: {}   Streak: {}x", q.score, q.streak)
+            } else {
+                format!("Skor: {}", q.score)
+            };
+            ui.label(RichText::new(skor).size(20.0).strong());
+        });
+    });
+    ui.add_space(8.0);
+    if matches!(q.phase, Phase::Answering) {
+        let remain = q.deadline.saturating_duration_since(Instant::now());
+        let frac = remain.as_secs_f32() / QUESTION_SECS as f32;
+        ui.add(
+            ProgressBar::new(frac).text(format!("Sisa waktu: {} detik", remain.as_secs())),
+        );
+    } else {
+        ui.add(ProgressBar::new(0.0).text("Waktu berhenti"));
+    }
+    ui.add_space(12.0);
+    ui.label(RichText::new(&item.prompt).size(24.0).strong());
+    ui.add_space(8.0);
+
+    // PERBAIKAN SILUET (bug v1.0: hitam di atas hitam): sprite selalu digambar
+    // di atas lingkaran LATAR TERANG, jadi siluet hitam pekat jelas kelihatan.
+    if let Some(pid) = item.pokemon_id {
+        let (ct, st) = get_textures(ctx, textures, pid);
+        let tex = if answered { &ct } else { &st };
+        let (rect, _) = ui.allocate_exact_size(Vec2::new(220.0, 220.0), egui::Sense::hover());
+        let painter = ui.painter_at(rect);
+        painter.circle_filled(
+            rect.center(),
+            104.0,
+            Color32::from_rgb(232, 234, 240),
+        );
+        let img_rect =
+            egui::Rect::from_center_size(rect.center(), Vec2::new(176.0, 176.0));
+        painter.image(
+            tex.id(),
+            img_rect,
+            egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+            Color32::WHITE,
+        );
+        ui.add_space(8.0);
+    }
+    if let Some(hint) = &item.hint {
+        ui.label(RichText::new(hint).size(18.0));
+        ui.add_space(8.0);
+    }
+
+    for (i, opt) in item.options.iter().enumerate() {
+        let text = if matches!(q.mode, Mode::Pokemon) {
+            opt.to_uppercase()
+        } else {
+            opt.clone()
+        };
+        let mut btn = Button::new(RichText::new(text).size(22.0));
+        if let Phase::Answered { chosen } = &q.phase {
+            if i == item.answer {
+                btn = btn.fill(Color32::from_rgb(46, 160, 67));
+            } else if Some(i) == *chosen {
+                btn = btn.fill(Color32::from_rgb(200, 60, 60));
+            }
+        }
+        if ui
+            .add_sized(Vec2::new(ui.available_width(), 60.0), btn)
+            .clicked()
+            && matches!(q.phase, Phase::Answering)
+        {
+            action = Action::Answer(Some(i));
+        }
+        ui.add_space(4.0);
+    }
+
+    if let Phase::Answered { chosen } = &q.phase {
+        let benar = item.options[item.answer].clone();
+        let benar = if matches!(q.mode, Mode::Pokemon) {
+            benar.to_uppercase()
+        } else {
+            benar
+        };
+        let msg = match chosen {
+            None => format!("Waktu habis! Jawaban benar: {benar}"),
+            Some(c) if *c == item.answer => {
+                format!("Benar! +10   (Streak: {}x)", q.streak)
+            }
+            Some(_) => format!("Salah. Jawaban benar: {benar}"),
+        };
+        ui.add_space(8.0);
+        ui.label(RichText::new(msg).size(22.0).strong());
+        ui.add_space(8.0);
+        if ui
+            .add_sized(
+                Vec2::new(ui.available_width(), 60.0),
+                Button::new(RichText::new("LANJUT").size(22.0).strong()),
+            )
+            .clicked()
+        {
+            action = Action::Next;
+        }
+    }
+    action
+}
+
+fn show_result(ui: &mut egui::Ui, r: &ResultState) -> Action {
+    let mut action = Action::None;
+    ui.add_space(24.0);
+    ui.label(RichText::new("SELESAI!").size(36.0).strong());
+    let mode_name = match r.mode {
+        Mode::Trivia => "Trivia",
+        Mode::Pokemon => "Tebak Pokemon",
+    };
+    ui.label(RichText::new(mode_name).size(22.0));
+    ui.add_space(12.0);
+    ui.label(RichText::new(format!("Skor: {}", r.score)).size(26.0).strong());
+    ui.label(
+        RichText::new(format!("Benar: {}/{}", r.correct, r.total)).size(22.0),
+    );
+    ui.label(RichText::new(format!("Skor terbaik: {}", r.best)).size(22.0));
+    if r.new_best {
+        ui.add_space(8.0);
+        ui.label(
+            RichText::new("SKOR TERBAIK BARU!")
+                .size(24.0)
+                .strong()
+                .color(Color32::from_rgb(255, 200, 40)),
+        );
+    }
+    ui.add_space(20.0);
+    if ui
+        .add_sized(
+            Vec2::new(ui.available_width(), 64.0),
+            Button::new(RichText::new("MAIN LAGI").size(24.0).strong()),
+        )
+        .clicked()
+    {
+        action = Action::PlayAgain(r.mode);
+    }
+    ui.add_space(8.0);
+    if ui
+        .add_sized(
+            Vec2::new(ui.available_width(), 64.0),
+            Button::new(RichText::new("MENU UTAMA").size(24.0).strong()),
+        )
+        .clicked()
+    {
+        action = Action::ToMenu;
+    }
+    action
+}
+
+#[cfg(target_os = "android")]
+#[no_mangle]
+fn android_main(app: eframe::android_activity::AndroidApp) {
+    android_logger::init_once(
+        android_logger::Config::default().with_max_level(log::LevelFilter::Info),
+    );
+    log::info!("Hozin Kuis v2.0 (Rust) mulai");
+    let data_path = app
+        .internal_data_path()
+        .unwrap_or_else(|| PathBuf::from("."));
+    let options = eframe::NativeOptions {
+        android_app: Some(app),
+        ..Default::default()
+    };
+    let _ = eframe::run_native(
+        "Hozin Kuis",
+        options,
+        Box::new(move |cc| Ok(Box::new(KuisApp::new(cc, data_path)))),
+    );
+}

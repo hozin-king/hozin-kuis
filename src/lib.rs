@@ -155,7 +155,7 @@ impl KuisApp {
         pool.sort_by_key(|q| q.difficulty != self.menu_difficulty);
         let mut items = Vec::new();
         for q in pool.into_iter().take(ROUND_LEN) {
-            let mut opts: Vec<(usize, &str)> =
+            let mut opts: Vec<(usize, &&str)> =
                 q.options.iter().enumerate().collect();
             opts.shuffle(&mut rng);
             let answer = opts.iter().position(|(i, _)| *i == q.answer).unwrap();
@@ -401,21 +401,19 @@ fn decode_png(bytes: &[u8]) -> ColorImage {
             let (w, h) = rgba.dimensions();
             ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &rgba.into_raw())
         }
-        Err(_) => ColorImage::new([96, 96], Color32::TRANSPARENT),
+        Err(_) => ColorImage::new([96, 96], vec![Color32::TRANSPARENT; 96 * 96]),
     }
 }
 
 fn silhouette(img: &ColorImage) -> ColorImage {
-    let mut px = img.pixels.clone();
-    for p in px.iter_mut() {
+    // Clone + mutasi supaya tetap kompatibel bila egui menambah field ColorImage.
+    let mut out = img.clone();
+    for p in out.pixels.iter_mut() {
         if p.a() > 0 {
             *p = Color32::BLACK;
         }
     }
-    ColorImage {
-        size: img.size,
-        pixels: px,
-    }
+    out
 }
 
 fn get_textures(
@@ -609,7 +607,7 @@ fn show_result(ui: &mut egui::Ui, r: &ResultState) -> Action {
 
 #[cfg(target_os = "android")]
 #[no_mangle]
-fn android_main(app: eframe::android_activity::AndroidApp) {
+pub fn android_main(app: android_activity::AndroidApp) {
     android_logger::init_once(
         android_logger::Config::default().with_max_level(log::LevelFilter::Info),
     );

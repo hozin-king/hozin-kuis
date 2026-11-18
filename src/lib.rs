@@ -1,4 +1,4 @@
-// Hozin Kuis v2.2 — full Rust (eframe/egui + android-activity).
+// Hozin Kuis v2.3 — full Rust (eframe/egui + android-activity).
 // Offline penuh: bank soal Bahasa Indonesia + data/sprite 151 Pokemon Gen 1
 // dibundel di binary. Tanpa WebView, tanpa iklan, tanpa IAP, tanpa login,
 // tanpa network saat runtime.
@@ -348,19 +348,27 @@ impl eframe::App for KuisApp {
 
         paint_background(ctx);
 
+        // ScrollArea vertikal sebagai jaring pengaman: tidak ada lagi elemen
+        // yang bisa terdorong ke luar viewport (bug menu v2.2). Konten yang
+        // lebih tinggi dari layar bisa di-scroll; yang muat tetap tampil penuh.
         let action = egui::CentralPanel::default()
             .show(ctx, |ui| {
-                ui.vertical_centered(|ui| match &mut self.screen {
-                    Screen::Menu => {
-                        let cat = &mut self.menu_category;
-                        let dif = &mut self.menu_difficulty;
-                        let (bt, bp) = (self.best_trivia, self.best_pokemon);
-                        show_menu(ctx, ui, cat, dif, bt, bp, &mut self.textures)
-                    }
-                    Screen::Quiz(q) => show_quiz(ctx, ui, q, &mut self.textures),
-                    Screen::Result(r) => show_result(ui, r),
-                })
-                .inner
+                egui::ScrollArea::vertical()
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        ui.vertical_centered(|ui| match &mut self.screen {
+                            Screen::Menu => {
+                                let cat = &mut self.menu_category;
+                                let dif = &mut self.menu_difficulty;
+                                let (bt, bp) = (self.best_trivia, self.best_pokemon);
+                                show_menu(ctx, ui, cat, dif, bt, bp, &mut self.textures)
+                            }
+                            Screen::Quiz(q) => show_quiz(ctx, ui, q, &mut self.textures),
+                            Screen::Result(r) => show_result(ui, r),
+                        })
+                        .inner
+                    })
+                    .inner
             })
             .inner;
 
@@ -423,8 +431,13 @@ fn chip(
 }
 
 // Indikator progres ronde: titik per soal (terisi = sudah dijawab).
+// Baris dipusatkan manual dengan spasi depan — JANGAN horizontal_centered:
+// pola yang sama dengan kartu maskot v2.2, ia bisa mengembang dan mendorong
+// konten di bawahnya (tombol LANJUT) ke luar layar.
 fn progress_dots(ui: &mut egui::Ui, idx: usize, total: usize) {
-    ui.horizontal_centered(|ui| {
+    let total_w = total as f32 * 18.0 + (total.saturating_sub(1)) as f32 * 10.0;
+    ui.horizontal(|ui| {
+        ui.add_space(((ui.available_width() - total_w) / 2.0).max(0.0));
         for n in 0..total {
             let (rect, _) =
                 ui.allocate_exact_size(Vec2::new(18.0, 18.0), egui::Sense::hover());
@@ -450,8 +463,10 @@ fn show_menu(
     textures: &mut HashMap<u32, (TextureHandle, TextureHandle)>,
 ) -> Action {
     let mut action = Action::None;
-    let h = ui.available_height();
-    ui.add_space(h * 0.03);
+    // Jarak TETAP (bukan fraksi available_height): di dalam ScrollArea
+    // tinggi tersedia tidak terbatas, jadi fraksi tinggi layar akan
+    // mengembang tak terkendali. Jarak tetap = layout deterministik.
+    ui.add_space(12.0);
     // Banner judul ala game: kartu gelap + garis aksen + judul besar.
     Frame::default()
         .fill(CARD)
@@ -473,19 +488,29 @@ fn show_menu(
                 );
             });
         });
-    ui.add_space(h * 0.02);
+    ui.add_space(10.0);
     // Deretan maskot dari sprite yang sudah dibundel (tanpa aset baru).
+    // AKAR BUG v2.2: Frame::group + horizontal_centered membuat kartu
+    // mengembang setinggi layar (maskot terpusat vertikal di tengah kartu
+    // raksasa itu) sehingga kartu skor, chip, tombol, dan footer terdorong
+    // ke luar viewport. Pola pengganti: Frame::group + vertical_centered
+    // (pola v2.1 yang terbukti tidak mengembang) + baris horizontal dengan
+    // spasi depan manual supaya maskot tetap terpusat.
+    let mascot_total = 5.0 * 64.0 + 4.0 * 10.0;
     egui::Frame::group(ui.style())
         .corner_radius(CornerRadius::same(14))
         .show(ui, |ui| {
-            ui.horizontal_centered(|ui| {
-                for id in MASCOTS {
-                    let (ct, _) = get_textures(ctx, textures, id);
-                    ui.image((ct.id(), Vec2::new(64.0, 64.0)));
-                }
+            ui.vertical_centered(|ui| {
+                ui.horizontal(|ui| {
+                    ui.add_space(((ui.available_width() - mascot_total) / 2.0).max(0.0));
+                    for id in MASCOTS {
+                        let (ct, _) = get_textures(ctx, textures, id);
+                        ui.image((ct.id(), Vec2::new(64.0, 64.0)));
+                    }
+                });
             });
         });
-    ui.add_space(h * 0.02);
+    ui.add_space(10.0);
     egui::Frame::group(ui.style())
         .corner_radius(CornerRadius::same(14))
         .show(ui, |ui| {
@@ -499,7 +524,7 @@ fn show_menu(
                 );
             });
         });
-    ui.add_space(h * 0.02);
+    ui.add_space(10.0);
     ui.label(RichText::new("Kategori Trivia:").size(20.0).strong());
     ui.add_space(4.0);
     let chip_w = (ui.available_width() - 20.0) / 3.0;
@@ -523,7 +548,7 @@ fn show_menu(
             }
         }
     });
-    ui.add_space(h * 0.03);
+    ui.add_space(16.0);
     if ui
         .add_sized(
             Vec2::new(ui.available_width(), 68.0),
@@ -555,8 +580,11 @@ fn show_menu(
     {
         action = Action::StartPokemon;
     }
-    // Dorong footer ke bawah layar: tidak ada lagi void hitam di bawah.
-    ui.add_space((ui.available_height() - 28.0).max(0.0));
+    // Footer tepat setelah tombol (jarak tetap). Spacer "dorong ke bawah
+    // layar" v2.2 dihapus: di dalam ScrollArea ia tidak terdefinisi, dan
+    // di luar ScrollArea ia rapuh — ScrollArea di atas yang menjamin
+    // semua elemen selalu bisa dijangkau.
+    ui.add_space(10.0);
     ui.label(
         RichText::new("Offline \u{2022} 120 soal \u{2022} 151 Pokemon Gen 1")
             .size(16.0)
@@ -729,9 +757,7 @@ fn show_quiz(
         ui.label(RichText::new(msg).size(22.0).strong().color(msg_color));
         ui.add_space(8.0);
         progress_dots(ui, q.idx, q.items.len());
-        ui.add_space(8.0);
-        // Dorong tombol LANJUT ke bawah layar.
-        ui.add_space((ui.available_height() - 60.0).max(0.0));
+        ui.add_space(16.0);
         if ui
             .add_sized(
                 Vec2::new(ui.available_width(), 60.0),
@@ -748,8 +774,8 @@ fn show_quiz(
             action = Action::Next;
         }
     } else {
-        // Masih menjawab: dorong indikator progres ke bawah layar.
-        ui.add_space((ui.available_height() - 26.0).max(0.0));
+        // Masih menjawab: indikator progres tepat setelah opsi (jarak tetap).
+        ui.add_space(16.0);
         progress_dots(ui, q.idx, q.items.len());
     }
     action
@@ -757,8 +783,7 @@ fn show_quiz(
 
 fn show_result(ui: &mut egui::Ui, r: &ResultState) -> Action {
     let mut action = Action::None;
-    let h = ui.available_height();
-    ui.add_space(h * 0.10);
+    ui.add_space(24.0);
     ui.label(RichText::new("SELESAI!").size(44.0).strong());
     let mode_name = match r.mode {
         Mode::Trivia => "Trivia",
@@ -787,8 +812,6 @@ fn show_result(ui: &mut egui::Ui, r: &ResultState) -> Action {
         );
     }
     ui.add_space(20.0);
-    // Dorong tombol ke bawah layar.
-    ui.add_space((ui.available_height() - 146.0).max(0.0));
     if ui
         .add_sized(
             Vec2::new(ui.available_width(), 68.0),
@@ -823,7 +846,7 @@ pub fn android_main(app: android_activity::AndroidApp) {
     android_logger::init_once(
         android_logger::Config::default().with_max_level(log::LevelFilter::Info),
     );
-    log::info!("Hozin Kuis v2.2 (Rust) mulai");
+    log::info!("Hozin Kuis v2.3 (Rust) mulai");
     let data_path = app
         .internal_data_path()
         .unwrap_or_else(|| PathBuf::from("."));

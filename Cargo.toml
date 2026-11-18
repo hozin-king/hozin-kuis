@@ -1,6 +1,6 @@
 [package]
 name = "hozin-kuis"
-version = "2.2.0"
+version = "2.3.0"
 edition = "2021"
 description = "Hozin Kuis — game kuis offline (Trivia Bahasa Indonesia + Tebak Pokemon), ditulis penuh dalam Rust"
 license = "MIT"
@@ -25,6 +25,9 @@ log = "0.4"
 apk_name = "HozinKuis"
 package = "com.hozinking.kuis"
 build_targets = ["aarch64-linux-android"]
+# Ikon launcher: android_res/mipmap-*/ic_launcher.png (dihasilkan dari
+# sprite Pikachu oleh tools/gen_icon.py) + icon di [application] di bawah.
+res = "android_res"
 
 [package.metadata.android.sdk]
 min_sdk_version = 26
@@ -32,6 +35,7 @@ target_sdk_version = 34
 
 [package.metadata.android.application]
 label = "Hozin Kuis"
+icon = "@mipmap/ic_launcher"
 
 [package.metadata.android.application.activity]
 orientation = "portrait"

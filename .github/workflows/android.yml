@@ -67,7 +67,11 @@ jobs:
           APK=$(ls target/release/apk/*.apk | grep -v -- '-unaligned.apk' | head -n 1)
           echo "APK=$APK" >> "$GITHUB_ENV"
           ls -l "$APK"
-          "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "$APK" | grep -E "package:|application-label"
+          "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "$APK" | grep -E "package:|application:"
+          # Ikon launcher WAJIB terisi (v2.3): badging 'application:' harus
+          # membawa icon, dan manifest harus punya atribut android:icon.
+          "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "$APK" | grep -q "icon=" || (echo "GAGAL: APK tidak punya ikon launcher" && exit 1)
+          "$ANDROID_HOME/build-tools/34.0.0/aapt" dump xmltree "$APK" AndroidManifest.xml | grep -q "android:icon" || (echo "GAGAL: manifest tidak punya android:icon" && exit 1)
           "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --print-certs "$APK"
 
       # TIDAK ada upload-artifact: kuota storage Actions akun terbatas.
@@ -77,10 +81,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="v2.2"
-          cp "$APK" "HozinKuis-2.2.apk"
+          TAG="v2.3"
+          cp "$APK" "HozinKuis-2.3.apk"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "HozinKuis-2.2.apk" --clobber
+            gh release upload "$TAG" "HozinKuis-2.3.apk" --clobber
           else
-            gh release create "$TAG" "HozinKuis-2.2.apk" --title "Hozin Kuis 2.2" --notes "v2.2 — redesain UI benar-benar (bukan sekadar ganti warna): latar gradien biru-ungu di seluruh aplikasi, layout mengisi layar penuh (tanpa void hitam di bawah), banner judul ala game, deretan maskot Pokemon dari sprite yang sudah dibundel, chip kategori/kesulitan berwarna per item, tombol utama Trivia biru / Tebak Pokemon emas, kartu soal, pilihan jawaban berhuruf A-D, indikator progres ronde, tombol bawah layar. Fungsi tidak berubah. Game kuis Android native, ditulis PENUH dalam Rust (cargo-apk + android-activity + egui). 100% OFFLINE: bank 120 soal Trivia Bahasa Indonesia + data dan sprite 151 Pokemon Gen 1 dibundel di aplikasi. Mode Trivia (6 kategori, 3 tingkat) dan Tebak Pokemon (siluet di atas latar terang). 10 soal/ronde, timer 30 detik per soal, skor + streak, skor terbaik tersimpan lokal. Tanpa iklan, tanpa IAP, tanpa login, tanpa internet."
+            gh release create "$TAG" "HozinKuis-2.3.apk" --title "Hozin Kuis 2.3" --notes "v2.3 — perbaikan menu v2.2 yang rusak di HP: akar masalahnya kartu maskot (Frame::group + horizontal_centered) mengembang setinggi layar sehingga kartu skor, chip kategori/kesulitan, kedua tombol MULAI, dan footer terdorong ke luar viewport. v2.3 memakai pola layout yang terbukti tidak mengembang (Frame::group + vertical_centered + baris horizontal dengan spasi manual) + ScrollArea vertikal sebagai jaring pengaman, dan jarak antar-elemen kini tetap (bukan fraksi tinggi layar). Bahasa visual v2.2 dipertahankan (gradien biru-ungu, banner judul, 5 maskot, chip berwarna, tombol biru vs emas). BARU: ikon launcher proper — Pikachu di atas gradien aplikasi (mipmap 48-192px), jadi aplikasi tidak lagi tampil dengan ikon default Android. Fungsi tidak berubah. Game kuis Android native, ditulis PENUH dalam Rust (cargo-apk + android-activity + egui). 100% OFFLINE: bank 120 soal Trivia Bahasa Indonesia + data dan sprite 151 Pokemon Gen 1 dibundel di aplikasi. Mode Trivia (6 kategori, 3 tingkat) dan Tebak Pokemon (siluet di atas latar terang). 10 soal/ronde, timer 30 detik per soal, skor + streak, skor terbaik tersimpan lokal. Tanpa iklan, tanpa IAP, tanpa login, tanpa internet."
           fi

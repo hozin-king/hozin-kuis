@@ -26,8 +26,8 @@ APK hanya dibangun di GitHub Actions. Rilis otomatis saat push ke `main`.
 - Target: `aarch64-linux-android` (arm64-v8a)
 - Signing: keystore debug persisten (secret `DEBUG_KEYSTORE_BASE64`,
   `CARGO_APK_RELEASE_KEYSTORE` + password `android` saat build)
-- Versi: Cargo `2.2.0` → versionName `2.2.0`, versionCode dari semver
-  (cargo-apk; tidak bisa di-override di TOML). Rilis GitHub: tag `v2.2`.
+- Versi: Cargo `2.3.0` → versionName `2.3.0`, versionCode dari semver
+  (cargo-apk; tidak bisa di-override di TOML). Rilis GitHub: tag `v2.3`.
 
 ## Riwayat
 
@@ -41,6 +41,12 @@ APK hanya dibangun di GitHub Actions. Rilis otomatis saat push ke `main`.
   banner judul, maskot sprite Pokemon, chip berwarna per kategori/kesulitan,
   tombol Trivia biru / Pokemon emas, kartu soal, jawaban A-D, indikator
   progres; fungsi tidak berubah.
+- **v2.3** — perbaikan menu v2.2 yang rusak di HP (kartu maskot mengembang
+  setinggi layar dan mendorong semua elemen menu ke luar viewport):
+  layout pakai ScrollArea vertikal + jarak tetap + pola kartu yang tidak
+  mengembang; bahasa visual v2.2 dipertahankan. BARU: ikon launcher proper
+  (Pikachu di atas gradien aplikasi, mipmap 48-192px; dihasilkan
+  `tools/gen_icon.py` dari sprite yang sudah dibundel).
 
 ## Data
 
